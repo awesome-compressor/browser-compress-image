@@ -353,18 +353,43 @@ async function addNewImages(files: File[]) {
 async function compressImage(item: ImageItem): Promise<void> {
   if (item.isCompressing) return
 
-  item.isCompressing = true
-  item.compressionError = undefined
+// 格式化文件大小，自动切换 MB/KB 单位
+function formatSize(size: number) {
+  if (size >= 1024 * 1024) {
+    return (size / 1024 / 1024).toFixed(2) + 'MB'
+  } else if (size >= 1024) {
+    return (size / 1024).toFixed(2) + 'KB'
+  } else {
+    return size + 'B'
+  }
+}
 
-  try {
-    const compressedBlob = await compress(item.file, {
-      quality: item.quality / 100, // 使用图片自己的质量设置
-      type: 'blob',
+async function compressImage() {
+  if (!file.value) return
+  const type = file.value.type
+  if (!supportType.includes(type)) {
+    deleteHandler()
+    return ElMessage({
+      message: `${type}格式还不支持`,
+      type: 'error',
     })
 
-    if (!compressedBlob) {
-      throw new Error('Compression failed - size too large')
-    }
+  const compressFile = await compress(file.value, {
+    quality: quality.value / 100,
+    type: 'blob',
+  })
+  if (!compressFile) {
+    return ElMessage({
+      message: 'size is too large',
+      type: 'error',
+    })
+  }
+  originSize.value = formatSize(file.value.size)
+  compressSize.value = formatSize(compressFile.size)
+  oldbase.value = URL.createObjectURL(file.value)
+  oldSrcList.value = [oldbase.value]
+  newbase.value = URL.createObjectURL(compressFile)
+  newSrcList.value = [newbase.value]
 
     if (item.compressedUrl) {
       URL.revokeObjectURL(item.compressedUrl)
@@ -705,13 +730,10 @@ function setCurrentImage(index: number) {
           class="toolbar-section stats-section"
         >
           <div class="stats-info">
-            <span class="size-label"
-              >Total: {{ formatFileSize(totalOriginalSize) }} →
-              {{ formatFileSize(totalCompressedSize) }}</span
-            >
-            <div class="savings-badge">
-              <span class="saved-mini"
-                >-{{ totalCompressionRatio.toFixed(1) }}%</span
+            <div class="size-info">
+              <span class="size-label">Size</span>
+              <span class="stat-mini"
+                >{{ originSize }}→ {{ compressSize }}</span
               >
             </div>
           </div>
