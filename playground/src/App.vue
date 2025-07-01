@@ -352,6 +352,18 @@ async function addNewImages(files: File[]) {
 // 压缩单个图片
 async function compressImage(item: ImageItem): Promise<void> {
   if (item.isCompressing) return
+  // 格式化文件大小，自动切换 MB/KB 单位
+  function formatSize(size: number) {
+    if (size >= 1024 * 1024) {
+      return `${(size / 1024 / 1024).toFixed(2)}MB`
+    } else if (size >= 1024) {
+      return `${(size / 1024).toFixed(2)}KB`
+    } else {
+      return `${size}B`
+    }
+  }
+  item.isCompressing = true
+  item.compressionError = undefined
 
 // 格式化文件大小，自动切换 MB/KB 单位
 function formatSize(size: number) {
@@ -730,10 +742,13 @@ function setCurrentImage(index: number) {
           class="toolbar-section stats-section"
         >
           <div class="stats-info">
-            <div class="size-info">
-              <span class="size-label">Size</span>
-              <span class="stat-mini"
-                >{{ originSize }}→ {{ compressSize }}</span
+            <span class="size-label"
+              >Total: {{ formatFileSize(totalOriginalSize) }} →
+              {{ formatFileSize(totalCompressedSize) }}</span
+            >
+            <div class="savings-badge">
+              <span class="saved-mini"
+                >-{{ totalCompressionRatio.toFixed(1) }}%</span
               >
             </div>
           </div>
