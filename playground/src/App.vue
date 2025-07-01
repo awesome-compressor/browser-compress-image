@@ -726,10 +726,9 @@ function setCurrentImage(index: number) {
           </div>
         </div>
 
-        <div v-if="totalCompressedSize > 0" class="toolbar-divider" />
+        <div class="toolbar-divider" />
 
         <div
-          v-if="totalCompressedSize > 0"
           class="toolbar-section stats-section"
         >
           <div class="stats-info">
@@ -810,11 +809,11 @@ function setCurrentImage(index: number) {
                 <span class="original-size">{{
                   formatFileSize(item.originalSize)
                 }}</span>
-                <span v-if="item.compressedSize" class="compressed-size">
-                  → {{ formatFileSize(item.compressedSize) }}
+                <span class="compressed-size">
+                  → {{ formatFileSize(item.compressedSize||0) }}
                 </span>
-                <span v-if="item.compressionRatio" class="ratio">
-                  (-{{ item.compressionRatio.toFixed(1) }}%)
+                <span class="ratio">
+                  (-{{ item.compressionRatio?.toFixed(1) }}%)
                 </span>
               </div>
               <!-- 独立的质量控制 -->
@@ -829,7 +828,7 @@ function setCurrentImage(index: number) {
                   class="image-quality-slider"
                   :show-tooltip="false"
                   size="small"
-                  @change="(val) => handleImageQualityChange(item, val)"
+                  @change="(val:number) => handleImageQualityChange(item, val)"
                 />
               </div>
             </div>
@@ -1000,7 +999,7 @@ function setCurrentImage(index: number) {
 
 <style scoped>
 .app-container {
-  min-height: 100vh;
+  height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -1310,9 +1309,8 @@ function setCurrentImage(index: number) {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 20px;
+  padding: 20px 20px 0;
   gap: 20px;
-  min-height: calc(100vh - 160px);
   overflow: visible;
 }
 
@@ -1612,17 +1610,13 @@ function setCurrentImage(index: number) {
 /* 全屏图片对比区域 */
 .fullscreen-comparison {
   flex: 1;
-  min-height: 500px;
-  padding: 20px;
   display: flex;
-  align-items: center;
   justify-content: center;
   overflow: visible;
 }
 
 .comparison-container-fullscreen {
   width: 100%;
-  max-width: 95vw;
   min-height: 450px;
   height: 450px;
   border-radius: 16px;
@@ -1635,6 +1629,9 @@ function setCurrentImage(index: number) {
 }
 
 .comparison-slider-fullscreen {
+  display: flex;
+  justify-content: center;
+  align-items: center;
   width: 100%;
   height: 100%;
   --divider-width: 3px;
@@ -1645,11 +1642,9 @@ function setCurrentImage(index: number) {
 
 .comparison-image-fullscreen {
   width: 100%;
-  /* height: 100%; */
-  max-height: calc(100vh - 440px);
+  height: 450px;
   object-fit: contain;
   background: rgba(0, 0, 0, 0.05);
-  /* 防闪烁优化 */
   opacity: 1 !important;
   visibility: visible !important;
   transition: none !important;
@@ -1723,17 +1718,19 @@ function setCurrentImage(index: number) {
 
   .images-section {
     padding: 10px;
-    min-height: calc(100vh - 120px);
     overflow: visible;
   }
 
   .images-grid {
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    max-height: 180px;
+    padding: 0 20px;
+    height: 180px;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 
   .image-card {
-    width: 100%;
+    flex: 0 0 120px;
+    width: 120px;
   }
 
   .image-preview {
@@ -1802,7 +1799,6 @@ function setCurrentImage(index: number) {
 
   .fullscreen-comparison {
     height: auto;
-    min-height: 300px;
     margin-top: 20px;
     padding: 10px;
     overflow: visible;
@@ -1816,9 +1812,7 @@ function setCurrentImage(index: number) {
 
   .fullscreen-comparison {
     height: auto;
-    min-height: 400px;
     max-height: none;
-    margin-top: 60px;
     padding: 10px;
     overflow: auto;
   }
@@ -1901,11 +1895,11 @@ img-comparison-slider img {
 
 /* 图片网格 */
 .images-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  display: flex;
   gap: 12px;
-  max-height: 280px;
-  overflow-y: auto;
+  height: 280px;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 10px;
   background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(10px);
@@ -1917,6 +1911,7 @@ img-comparison-slider img {
 }
 
 .images-grid::-webkit-scrollbar {
+  height: 6px;
   width: 6px;
 }
 
@@ -1942,6 +1937,8 @@ img-comparison-slider img {
   transition: all 0.3s ease;
   border: 2px solid transparent;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  flex: 0 0 150px;
+  width: 150px;
 }
 
 .image-card:hover {
@@ -2196,6 +2193,26 @@ img-comparison-slider img {
   color: white;
   padding: 20px;
   backdrop-filter: blur(10px);
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+  pointer-events: none;
+}
+
+/* 当比对滑块被拖拽时隐藏信息层 */
+.comparison-container-fullscreen:hover .image-overlay-info {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* 当鼠标在比对滑块上时也隐藏信息层 */
+.comparison-slider-fullscreen:hover ~ .image-overlay-info {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* 为img-comparison-slider添加专门的样式 */
+:deep(img-comparison-slider:hover) ~ .image-overlay-info {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .image-title {
