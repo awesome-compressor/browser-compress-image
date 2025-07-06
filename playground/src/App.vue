@@ -41,6 +41,9 @@ const isCompressingAll = ref(false)
 const isMobileDragging = ref(false)
 const isPCDragging = ref(false) // PC端拖拽状态 // 移动端拖拽状态
 
+// 全局配置
+const preserveExif = ref(false) // EXIF 信息保留选项
+
 // 图片列表状态
 const imageItems = ref<ImageItem[]>([])
 const supportType = [
@@ -627,25 +630,11 @@ async function compressImage(item: ImageItem): Promise<void> {
   item.isCompressing = true
   item.compressionError = undefined
 
-// 格式化文件大小，自动切换 MB/KB 单位
-function formatSize(size: number) {
-  if (size >= 1024 * 1024) {
-    return (size / 1024 / 1024).toFixed(2) + 'MB'
-  } else if (size >= 1024) {
-    return (size / 1024).toFixed(2) + 'KB'
-  } else {
-    return size + 'B'
-  }
-}
-
-async function compressImage() {
-  if (!file.value) return
-  const type = file.value.type
-  if (!supportType.includes(type)) {
-    deleteHandler()
-    return ElMessage({
-      message: `${type}格式还不支持`,
-      type: 'error',
+  try {
+    const compressedBlob = await compress(item.file, {
+      quality: item.quality / 100, // 使用图片自己的质量设置
+      type: 'blob',
+      preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
     })
 
   const compressFile = await compress(file.value, {
@@ -704,6 +693,16 @@ async function compressImages(items: ImageItem[] = imageItems.value) {
 async function handleImageQualityChange(item: ImageItem, newQuality: number) {
   item.quality = newQuality
   await compressImage(item)
+}
+
+// 处理 EXIF 保留选项变化
+async function handlePreserveExifChange() {
+  // 重新压缩所有已存在的图片，使用新的 EXIF 设置
+  for (const item of imageItems.value) {
+    if (!item.isCompressing) {
+      await compressImage(item)
+    }
+  }
 }
 
 // 删除单个图片
@@ -962,6 +961,19 @@ function setCurrentImage(index: number) {
               {{ totalCompressionRatio < 0 ? '+' : '-'
               }}{{ Math.abs(totalCompressionRatio).toFixed(1) }}%
             </span>
+          </div>
+        </div>
+
+        <div class="toolbar-divider" />
+
+        <div class="toolbar-section options-section">
+          <div class="exif-option">
+            <el-checkbox
+              v-model="preserveExif"
+              @change="handlePreserveExifChange"
+            >
+              <span class="exif-label">Preserve EXIF</span>
+            </el-checkbox>
           </div>
         </div>
 
@@ -1785,6 +1797,7 @@ function setCurrentImage(index: number) {
   align-items: center;
   gap: 8px;
   height: 45px;
+  min-width: 280px; /* 防止数字变化时工具栏抖动 */
 }
 
 .size-label {
@@ -1820,6 +1833,25 @@ function setCurrentImage(index: number) {
   );
   border: 1px solid rgba(220, 38, 38, 0.2);
   box-shadow: 0 2px 4px rgba(220, 38, 38, 0.1);
+}
+
+/* 选项区域 */
+.options-section {
+  justify-content: center;
+  min-width: 120px;
+}
+
+.exif-option {
+  display: flex;
+  align-items: center;
+  height: 45px;
+}
+
+.exif-label {
+  font-size: 12px;
+  color: #374151;
+  font-weight: 500;
+  margin-left: 6px;
 }
 
 /* 下载按钮区域 */
@@ -2098,6 +2130,13 @@ function setCurrentImage(index: number) {
     justify-content: center;
   }
 
+  .options-section {
+    align-items: center;
+    flex-direction: row;
+    justify-content: center;
+    min-width: auto;
+  }
+
   .toolbar-divider {
     width: 100%;
     height: 1px;
@@ -2108,6 +2147,11 @@ function setCurrentImage(index: number) {
       transparent
     );
     margin: 0;
+  }
+
+  .stats-info {
+    min-width: 220px; /* 移动端使用较小的最小宽度 */
+    justify-content: center;
   }
 
   .upload-btn-hero {
