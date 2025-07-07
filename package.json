@@ -10,13 +10,13 @@
     "url": "https://github.com/Simon-He95"
   },
   "license": "MIT",
-  "homepage": "https://github.com/Simon-He95/browser-compress-image#readme",
+  "homepage": "https://github.com/awesome-compressor/browser-compress-image#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Simon-He95/browser-compress-image.git"
+    "url": "git+https://github.com/awesome-compressor/browser-compress-image.git"
   },
   "bugs": {
-    "url": "https://github.com/Simon-He95/browser-compress-image/issues"
+    "url": "https://github.com/awesome-compressor/browser-compress-image/issues"
   },
   "keywords": [
     "image-compression",
