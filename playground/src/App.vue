@@ -637,22 +637,13 @@ async function compressImage(item: ImageItem): Promise<void> {
       preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
     })
 
-  const compressFile = await compress(file.value, {
-    quality: quality.value / 100,
-    type: 'blob',
-  })
-  if (!compressFile) {
-    return ElMessage({
-      message: 'size is too large',
-      type: 'error',
-    })
-  }
-  originSize.value = formatSize(file.value.size)
-  compressSize.value = formatSize(compressFile.size)
-  oldbase.value = URL.createObjectURL(file.value)
-  oldSrcList.value = [oldbase.value]
-  newbase.value = URL.createObjectURL(compressFile)
-  newSrcList.value = [newbase.value]
+    if (!compressedBlob) {
+      ElMessage({
+        message: 'size is too large',
+        type: 'error',
+      })
+      return
+    }
 
     if (item.compressedUrl) {
       URL.revokeObjectURL(item.compressedUrl)
