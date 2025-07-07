@@ -3,7 +3,7 @@
 ## 基础用法（返回 Blob）
 
 ```typescript
-import { compress } from '@simon_he/browser-compress-image'
+import { compress } from '@awesome-compressor/browser-compress-image'
 
 const file = /* 你的文件 */
 const compressedBlob = await compress(file, 0.6) // 默认返回 Blob
@@ -49,8 +49,8 @@ console.log(compressedArrayBuffer instanceof ArrayBuffer) // true
 import type {
   CompressResult,
   CompressResultType,
-} from '@simon_he/browser-compress-image'
-import { compress } from '@simon_he/browser-compress-image'
+} from '@awesome-compressor/browser-compress-image'
+import { compress } from '@awesome-compressor/browser-compress-image'
 
 // 类型会根据第三个参数自动推断
 const blob = await compress(file, 0.6, 'blob') // 类型: Blob

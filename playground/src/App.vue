@@ -1012,7 +1012,7 @@ function setCurrentImage(index: number) {
           >
             <div class="image-preview">
               <img
-                style="object-fit: contain"
+                class="preview-image"
                 :src="item.originalUrl"
                 :alt="item.file.name"
               />
@@ -1136,13 +1136,6 @@ function setCurrentImage(index: number) {
                 class="comparison-image-fullscreen"
                 loading="eager"
                 decoding="sync"
-                style="
-                  opacity: 1;
-                  visibility: visible;
-                  transition: none;
-                  animation: none;
-                  filter: none;
-                "
                 @load="console.log('原图加载完成')"
                 @error="console.error('原图加载失败')"
               />
@@ -1153,13 +1146,6 @@ function setCurrentImage(index: number) {
                 class="comparison-image-fullscreen"
                 loading="eager"
                 decoding="sync"
-                style="
-                  opacity: 1;
-                  visibility: visible;
-                  transition: none;
-                  animation: none;
-                  filter: none;
-                "
                 @load="console.log('压缩图加载完成')"
                 @error="console.error('压缩图加载失败')"
               />
@@ -1560,7 +1546,7 @@ function setCurrentImage(index: number) {
   display: flex;
   flex-direction: column;
   padding: 20px 20px 0;
-  gap: 20px;
+  gap: 10px;
   overflow: visible;
 }
 
@@ -1959,17 +1945,13 @@ function setCurrentImage(index: number) {
 .comparison-image-fullscreen {
   width: 100%;
   height: 450px;
+  /* Safari 兼容性 - object-fit 支持 */
+  -o-object-fit: contain;
   object-fit: contain;
   background: rgba(0, 0, 0, 0.05);
-  opacity: 1 !important;
-  visibility: visible !important;
-  transition: none !important;
-  animation: none !important;
-  filter: none !important;
   /* 渲染优化 */
   transform: translateZ(0);
   backface-visibility: hidden;
-  image-rendering: crisp-edges;
   -webkit-backface-visibility: hidden;
 }
 
@@ -2226,8 +2208,6 @@ img-comparison-slider img {
   animation: none !important;
   filter: none !important;
   -webkit-filter: none !important;
-  transform: translateZ(0) !important;
-  will-change: auto !important;
 }
 
 /* 自定义全屏滑块样式 */
@@ -2315,11 +2295,21 @@ img-comparison-slider img {
   overflow: hidden;
 }
 
-.image-preview img {
+.image-preview img,
+.preview-image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  /* Safari 兼容性 - object-fit 支持 */
+  -o-object-fit: contain;
+  object-fit: contain;
+  /* 为不支持 object-fit 的旧版浏览器提供回退 */
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
   transition: transform 0.3s ease;
+  /* 确保图片在容器中居中显示 */
+  display: block;
+  margin: 0 auto;
 }
 
 .image-card:hover .image-preview img {
@@ -2562,6 +2552,8 @@ img-comparison-slider img {
 .single-image {
   max-width: 100%;
   max-height: 100%;
+  /* Safari 兼容性 - object-fit 支持 */
+  -o-object-fit: contain;
   object-fit: contain;
 }
 

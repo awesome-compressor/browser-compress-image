@@ -7,7 +7,7 @@
 ### 🎯 多工具压缩 - 自动选择最优结果
 
 ```typescript
-import { compressWithMultipleTools } from '@simon_he/browser-compress-image'
+import { compressWithMultipleTools } from '@awesome-compressor/browser-compress-image'
 
 // 使用多种压缩工具并行处理，自动选择最优结果
 const result = await compressWithMultipleTools(file, {
@@ -23,7 +23,7 @@ console.log('所有结果:', result.results)
 ### 📊 压缩性能统计
 
 ```typescript
-import { compressWithStats } from '@simon_he/browser-compress-image'
+import { compressWithStats } from '@awesome-compressor/browser-compress-image'
 
 // 获取详细的压缩统计信息，包括耗时和性能数据
 const stats = await compressWithStats(file, { quality: 0.8 })
@@ -57,8 +57,8 @@ console.log('压缩统计:', {
   </p>
 
   <p align="center">
-    <a href="https://www.npmjs.com/package/@simon_he/browser-compress-image"><img src="https://img.shields.io/npm/v/@simon_he/browser-compress-image.svg?style=flat&colorA=18181B&colorB=28CF8D" alt="Version"></a>
-    <a href="https://www.npmjs.com/package/@simon_he/browser-compress-image"><img src="https://img.shields.io/npm/dm/@simon_he/browser-compress-image.svg?style=flat&colorA=18181B&colorB=28CF8D" alt="Downloads"></a>
+    <a href="https://www.npmjs.com/package/@awesome-compressor/browser-compress-image"><img src="https://img.shields.io/npm/v/@awesome-compressor/browser-compress-image.svg?style=flat&colorA=18181B&colorB=28CF8D" alt="Version"></a>
+    <a href="https://www.npmjs.com/package/@awesome-compressor/browser-compress-image"><img src="https://img.shields.io/npm/dm/@awesome-compressor/browser-compress-image.svg?style=flat&colorA=18181B&colorB=28CF8D" alt="Downloads"></a>
     <a href="https://github.com/Simon-He95/browser-compress-image"><img src="https://img.shields.io/github/stars/Simon-He95/browser-compress-image.svg?style=flat&colorA=18181B&colorB=28CF8D" alt="Stars"></a>
     <a href="https://github.com/Simon-He95/browser-compress-image/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Simon-He95/browser-compress-image.svg?style=flat&colorA=18181B&colorB=28CF8D" alt="License"></a>
   </p>
@@ -107,13 +107,13 @@ console.log('压缩统计:', {
 
 ```bash
 # npm
-npm install @simon_he/browser-compress-image
+npm install @awesome-compressor/browser-compress-image
 
 # yarn
-yarn add @simon_he/browser-compress-image
+yarn add @awesome-compressor/browser-compress-image
 
 # pnpm
-pnpm add @simon_he/browser-compress-image
+pnpm add @awesome-compressor/browser-compress-image
 ```
 
 ## 🚀 快速开始
@@ -121,7 +121,7 @@ pnpm add @simon_he/browser-compress-image
 ### 基础用法
 
 ```typescript
-import { compress } from '@simon_he/browser-compress-image'
+import { compress } from '@awesome-compressor/browser-compress-image'
 
 // 压缩图片，默认返回 Blob
 const compressedBlob = await compress(file, 0.6)
@@ -137,7 +137,7 @@ const compressedWithExif = await compress(file, {
 ### 🎯 多工具压缩 - 自动选择最优结果
 
 ```typescript
-import { compress } from '@simon_he/browser-compress-image'
+import { compress } from '@awesome-compressor/browser-compress-image'
 
 // 默认行为：自动选择最优结果
 const compressedBlob = await compress(file, {
@@ -447,7 +447,7 @@ const optimizedFile = results.bestResult
 import type {
   CompressResultType,
   CompressResult,
-} from '@simon_he/browser-compress-image'
+} from '@awesome-compressor/browser-compress-image'
 
 // 类型会根据第三个参数自动推断
 const blob = await compress(file, 0.6, 'blob') // 类型: Blob

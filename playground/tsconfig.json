@@ -5,16 +5,17 @@
     "lib": ["DOM", "ESNext"],
     "baseUrl": ".",
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "paths": {
       "~/*": ["src/*"]
     },
     "resolveJsonModule": true,
-    "types": ["vite/client", "vite-plugin-pages/client"],
+    "types": ["vite/client", "vite-plugin-pages/client", "vitest/globals"],
     "strict": true,
     "strictNullChecks": true,
     "noUnusedLocals": true,
     "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
