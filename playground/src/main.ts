@@ -2,7 +2,6 @@ import ElementPlus from 'element-plus'
 import { VividTyping } from 'vivid-typing'
 import { createApp } from 'vue'
 import App from './App.vue'
-import '@unocss/reset/tailwind.css'
 import './styles/main.css'
 import 'element-plus/dist/index.css'
 

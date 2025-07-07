@@ -485,7 +485,6 @@ const buffer = await compress(file, 0.6, 'arrayBuffer') // 类型: ArrayBuffer
   - [Vue 3](https://vuejs.org/) - 渐进式 JavaScript 框架
   - [Vite](https://vitejs.dev/) - 现代化构建工具
   - [TypeScript](https://www.typescriptlang.org/) - 类型安全的 JavaScript
-  - [UnoCSS](https://unocss.dev/) - 即时原子化 CSS 引擎
 
 ## 📄 许可证
 

@@ -23,8 +23,5 @@ export default defineConfig({
       imports: ['vue', 'vue-router', '@vueuse/core'],
       dts: true,
     }) as any,
-
-    // https://github.com/antfu/unocss
-    // see unocss.config.ts for config
   ],
 })
