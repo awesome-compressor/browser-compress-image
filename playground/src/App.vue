@@ -2299,7 +2299,7 @@ function handleImageMouseUp() {
 }
 
 .comparison-image-fullscreen {
-  width: 100%;
+  width: 100vw;
   height: 450px;
   /* Safari 兼容性 - object-fit 支持 */
   -o-object-fit: contain;
