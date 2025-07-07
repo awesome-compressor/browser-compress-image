@@ -6,6 +6,10 @@ import {
   Loading,
   Picture,
   Upload,
+  ZoomIn,
+  ZoomOut,
+  FullScreen,
+  Aim,
 } from '@element-plus/icons-vue'
 import GitForkVue from '@simon_he/git-fork-vue'
 import { ElMessage } from 'element-plus'
@@ -40,6 +44,11 @@ const currentImageIndex = ref(0)
 const isCompressingAll = ref(false)
 const isMobileDragging = ref(false)
 const isPCDragging = ref(false) // PC端拖拽状态 // 移动端拖拽状态
+
+// 图片查看相关状态
+const imageZoom = ref(1) // 图片缩放比例
+const isFullscreen = ref(false) // 全屏状态
+const imageTransform = ref({ x: 0, y: 0 }) // 图片位移
 
 // 全局配置
 const preserveExif = ref(false) // EXIF 信息保留选项
@@ -199,6 +208,16 @@ onMounted(() => {
   // 添加PC端鼠标事件监听
   document.addEventListener('mousedown', handleMouseDown)
   document.addEventListener('mouseup', handleMouseUp)
+
+  // 添加键盘事件监听
+  document.addEventListener('keydown', handleKeydown)
+
+  // 添加鼠标事件监听（用于图片拖拽）
+  document.addEventListener('mousemove', handleImageMouseMove)
+  document.addEventListener('mouseup', handleImageMouseUp)
+
+  // 添加窗口大小变化监听
+  window.addEventListener('resize', handleWindowResize)
 })
 
 onUnmounted(() => {
@@ -217,6 +236,14 @@ onUnmounted(() => {
   // 清理PC端鼠标事件监听器
   document.removeEventListener('mousedown', handleMouseDown)
   document.removeEventListener('mouseup', handleMouseUp)
+
+  // 清理图片查看相关事件监听
+  document.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('mousemove', handleImageMouseMove)
+  document.removeEventListener('mouseup', handleImageMouseUp)
+
+  // 清理窗口事件监听
+  window.removeEventListener('resize', handleWindowResize)
 
   // 清理对象URL
   imageItems.value.forEach((item) => {
@@ -825,6 +852,270 @@ function formatFileSize(bytes: number): string {
 // 切换当前预览图片
 function setCurrentImage(index: number) {
   currentImageIndex.value = index
+
+  if (isFullscreen.value) {
+    // 全屏模式下切换图片时，保持当前缩放比例和所有位移不变
+    // 只是切换图片索引，不改变任何变换状态
+    nextTick(() => {
+      // 重新计算边界约束，确保当前位移在新图片的有效范围内
+      constrainImagePosition()
+    })
+  } else {
+    // 非全屏模式下切换图片时，重置缩放和位移
+    resetImageTransform()
+  }
+}
+
+// 图片缩放控制
+function zoomIn() {
+  imageZoom.value = Math.min(imageZoom.value * 1.2, 5) // 最大放大5倍
+  nextTick(() => {
+    constrainImagePosition()
+  })
+}
+
+function zoomOut() {
+  imageZoom.value = Math.max(imageZoom.value / 1.2, 0.1) // 最小缩小到0.1倍
+  nextTick(() => {
+    constrainImagePosition()
+  })
+}
+
+// 约束图片位置在边界内
+function constrainImagePosition() {
+  const bounds = calculateImageBounds()
+  imageTransform.value.x = Math.max(
+    bounds.minX,
+    Math.min(bounds.maxX, imageTransform.value.x),
+  )
+  imageTransform.value.y = Math.max(
+    bounds.minY,
+    Math.min(bounds.maxY, imageTransform.value.y),
+  )
+}
+
+// 图片加载完成处理
+function handleImageLoad(type: 'original' | 'compressed') {
+  console.log(`${type}图加载完成`)
+  // 重新计算边界，因为图片尺寸可能已经改变
+  nextTick(() => {
+    constrainImagePosition()
+  })
+}
+
+// 窗口大小变化处理
+function handleWindowResize() {
+  if (isFullscreen.value) {
+    // 延迟一帧执行，确保DOM更新完成
+    nextTick(() => {
+      constrainImagePosition()
+    })
+  }
+}
+
+function resetZoom() {
+  imageZoom.value = 1
+  imageTransform.value = { x: 0, y: 0 }
+}
+
+// 重置图片变换
+function resetImageTransform() {
+  imageZoom.value = 1
+  imageTransform.value = { x: 0, y: 0 }
+}
+
+// 全屏控制
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value
+  // 无论进入还是退出全屏，都重置缩放到100%和位移
+  resetImageTransform()
+}
+
+// 键盘事件处理
+function handleKeydown(e: KeyboardEvent) {
+  if (!hasImages.value) return
+
+  switch (e.key) {
+    case 'Escape':
+      if (isFullscreen.value) {
+        toggleFullscreen()
+      }
+      break
+    case '+':
+    case '=':
+      e.preventDefault()
+      zoomIn()
+      break
+    case '-':
+      e.preventDefault()
+      zoomOut()
+      break
+    case '0':
+      e.preventDefault()
+      resetZoom()
+      break
+    case 'f':
+    case 'F':
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault()
+        toggleFullscreen()
+      }
+      break
+    case 'ArrowLeft':
+      if (isFullscreen.value) {
+        e.preventDefault()
+        setCurrentImage(Math.max(0, currentImageIndex.value - 1))
+      }
+      break
+    case 'ArrowRight':
+      if (isFullscreen.value) {
+        e.preventDefault()
+        setCurrentImage(
+          Math.min(imageItems.value.length - 1, currentImageIndex.value + 1),
+        )
+      }
+      break
+  }
+}
+
+// 鼠标滚轮缩放
+function handleWheel(e: WheelEvent) {
+  if (!isFullscreen.value) return
+
+  e.preventDefault()
+  if (e.deltaY > 0) {
+    zoomOut()
+  } else {
+    zoomIn()
+  }
+}
+
+// 图片拖拽移动（全屏模式下）
+let isDragging = false
+let dragStartX = 0
+let dragStartY = 0
+let initialTransformX = 0
+let initialTransformY = 0
+
+function handleImageMouseDown(e: MouseEvent) {
+  if (!isFullscreen.value) return
+
+  // 如果图片没有放大，不处理拖拽
+  if (imageZoom.value <= 1) {
+    return // 让比较滑块正常工作
+  }
+
+  isDragging = true
+  dragStartX = e.clientX
+  dragStartY = e.clientY
+  initialTransformX = imageTransform.value.x
+  initialTransformY = imageTransform.value.y
+
+  // 阻止事件冒泡，避免触发比较滑块的拖拽
+  e.preventDefault()
+  e.stopPropagation()
+}
+
+// 计算图片拖拽边界
+function calculateImageBounds() {
+  if (!isFullscreen.value || imageZoom.value <= 1) {
+    return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
+  }
+
+  // 获取全屏容器的实际尺寸
+  const container = document.querySelector(
+    '.comparison-container-fullscreen',
+  ) as HTMLElement
+  if (!container) {
+    return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
+  }
+
+  const containerRect = container.getBoundingClientRect()
+  const containerWidth = containerRect.width
+  const containerHeight = containerRect.height
+
+  // 获取图片元素
+  const imgElement = container.querySelector(
+    '.comparison-image-fullscreen, .single-image',
+  ) as HTMLImageElement
+  if (!imgElement) {
+    return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
+  }
+
+  // 获取图片的自然尺寸
+  const naturalWidth = imgElement.naturalWidth
+  const naturalHeight = imgElement.naturalHeight
+
+  if (naturalWidth === 0 || naturalHeight === 0) {
+    return { maxX: 0, maxY: 0, minX: 0, minY: 0 }
+  }
+
+  // 计算图片在容器中的实际显示尺寸（考虑 object-fit: contain）
+  const containerAspect = containerWidth / containerHeight
+  const imageAspect = naturalWidth / naturalHeight
+
+  let displayWidth: number
+  let displayHeight: number
+
+  if (imageAspect > containerAspect) {
+    // 图片较宽，以容器宽度为准
+    displayWidth = containerWidth
+    displayHeight = containerWidth / imageAspect
+  } else {
+    // 图片较高，以容器高度为准
+    displayHeight = containerHeight
+    displayWidth = containerHeight * imageAspect
+  }
+
+  // 应用缩放
+  const scaledWidth = displayWidth * imageZoom.value
+  const scaledHeight = displayHeight * imageZoom.value
+
+  // 计算允许的移动范围
+  const maxMoveX = Math.max(0, (scaledWidth - containerWidth) / 2)
+  const maxMoveY = Math.max(0, (scaledHeight - containerHeight) / 2)
+
+  console.log('边界计算:', {
+    zoom: imageZoom.value,
+    container: { width: containerWidth, height: containerHeight },
+    natural: { width: naturalWidth, height: naturalHeight },
+    display: { width: displayWidth, height: displayHeight },
+    scaled: { width: scaledWidth, height: scaledHeight },
+    bounds: {
+      maxX: maxMoveX,
+      maxY: maxMoveY,
+      minX: -maxMoveX,
+      minY: -maxMoveY,
+    },
+  })
+
+  return {
+    maxX: maxMoveX,
+    maxY: maxMoveY,
+    minX: -maxMoveX,
+    minY: -maxMoveY,
+  }
+}
+
+function handleImageMouseMove(e: MouseEvent) {
+  if (!isDragging) return
+
+  const newX = e.clientX - dragStartX
+  const newY = e.clientY - dragStartY
+
+  // 获取边界
+  const bounds = calculateImageBounds()
+
+  // 限制移动范围
+  const clampedX = Math.max(bounds.minX, Math.min(bounds.maxX, newX))
+  const clampedY = Math.max(bounds.minY, Math.min(bounds.maxY, newY))
+
+  imageTransform.value.x = clampedX
+  imageTransform.value.y = clampedY
+}
+
+function handleImageMouseUp() {
+  isDragging = false
 }
 </script>
 
@@ -1088,8 +1379,19 @@ function setCurrentImage(index: number) {
         </div>
 
         <!-- 全屏图片对比预览 -->
-        <div v-if="currentImage" class="fullscreen-comparison">
-          <div class="comparison-container-fullscreen">
+        <div
+          v-if="currentImage"
+          class="fullscreen-comparison"
+          :class="{ 'fullscreen-mode': isFullscreen }"
+        >
+          <div
+            class="comparison-container-fullscreen"
+            :style="{
+              cursor: imageZoom > 1 ? 'move' : 'default',
+            }"
+            @wheel="handleWheel"
+            @mousedown="handleImageMouseDown"
+          >
             <!-- 调试信息 -->
             <div
               v-if="!currentImage.originalUrl || !currentImage.compressedUrl"
@@ -1134,9 +1436,13 @@ function setCurrentImage(index: number) {
                 :src="currentImage.originalUrl"
                 alt="Original Image"
                 class="comparison-image-fullscreen"
+                :style="{
+                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
+                  transformOrigin: 'center center',
+                }"
                 loading="eager"
                 decoding="sync"
-                @load="console.log('原图加载完成')"
+                @load="handleImageLoad('original')"
                 @error="console.error('原图加载失败')"
               />
               <img
@@ -1144,9 +1450,13 @@ function setCurrentImage(index: number) {
                 :src="currentImage.compressedUrl"
                 alt="Compressed Image"
                 class="comparison-image-fullscreen"
+                :style="{
+                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
+                  transformOrigin: 'center center',
+                }"
                 loading="eager"
                 decoding="sync"
-                @load="console.log('压缩图加载完成')"
+                @load="handleImageLoad('compressed')"
                 @error="console.error('压缩图加载失败')"
               />
               <!-- eslint-enable -->
@@ -1161,6 +1471,11 @@ function setCurrentImage(index: number) {
                 :src="currentImage.originalUrl"
                 :alt="currentImage.file.name"
                 class="single-image"
+                :style="{
+                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
+                  transformOrigin: 'center center',
+                }"
+                @load="handleImageLoad('original')"
               />
               <div v-if="currentImage.isCompressing" class="preview-overlay">
                 <el-icon class="is-loading" size="30px">
@@ -1187,8 +1502,49 @@ function setCurrentImage(index: number) {
                 'pc-dragging': isPCDragging,
               }"
             >
-              <div class="image-title">
-                {{ currentImage.file.name }}
+              <div class="overlay-header">
+                <div class="image-title">
+                  {{ currentImage.file.name }}
+                </div>
+                <div class="image-controls">
+                  <el-button
+                    circle
+                    size="small"
+                    @click="zoomOut"
+                    :disabled="imageZoom <= 0.1"
+                    title="缩小 (-)"
+                  >
+                    <el-icon><ZoomOut /></el-icon>
+                  </el-button>
+                  <span class="zoom-info"
+                    >{{ Math.round(imageZoom * 100) }}%</span
+                  >
+                  <el-button
+                    circle
+                    size="small"
+                    @click="zoomIn"
+                    :disabled="imageZoom >= 5"
+                    title="放大 (+)"
+                  >
+                    <el-icon><ZoomIn /></el-icon>
+                  </el-button>
+                  <el-button
+                    circle
+                    size="small"
+                    @click="resetZoom"
+                    title="重置缩放 (0)"
+                  >
+                    <el-icon><Aim /></el-icon>
+                  </el-button>
+                  <el-button
+                    circle
+                    size="small"
+                    @click="toggleFullscreen"
+                    :title="isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'"
+                  >
+                    <el-icon><FullScreen /></el-icon>
+                  </el-button>
+                </div>
               </div>
               <div class="image-details">
                 <span
@@ -1948,7 +2304,6 @@ function setCurrentImage(index: number) {
   /* Safari 兼容性 - object-fit 支持 */
   -o-object-fit: contain;
   object-fit: contain;
-  background: rgba(0, 0, 0, 0.05);
   /* 渲染优化 */
   transform: translateZ(0);
   backface-visibility: hidden;
@@ -2604,6 +2959,92 @@ img-comparison-slider img {
     opacity 0.2s ease,
     visibility 0.2s ease;
   pointer-events: none;
+  z-index: 1000;
+}
+
+/* 全屏模式样式 */
+.fullscreen-comparison.fullscreen-mode {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.95);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fullscreen-comparison.fullscreen-mode .comparison-container-fullscreen {
+  max-width: 90vw;
+  max-height: 90vh;
+  transition: transform 0.2s ease;
+  transform-origin: center;
+}
+
+.fullscreen-comparison.fullscreen-mode .image-overlay-info {
+  pointer-events: auto;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+}
+
+/* 覆盖层头部布局 */
+.overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.image-title {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  margin-right: 16px;
+}
+
+/* 图片控制按钮组 */
+.image-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.image-controls .el-button {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  transition: all 0.2s ease;
+}
+
+.image-controls .el-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.image-controls .el-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.image-controls .el-button:disabled:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: none;
+}
+
+/* 缩放信息显示 */
+.zoom-info {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+  min-width: 35px;
+  text-align: center;
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
 }
 
 /* 移动端拖拽时隐藏信息层 */
@@ -2616,15 +3057,6 @@ img-comparison-slider img {
 .image-overlay-info.pc-dragging {
   opacity: 0;
   visibility: hidden;
-}
-
-.image-title {
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .image-details {
@@ -2644,5 +3076,65 @@ img-comparison-slider img {
 
 .image-details .savings.savings-negative {
   color: #dc2626;
+}
+
+/* 全屏模式下的键盘提示 */
+.fullscreen-comparison.fullscreen-mode::before {
+  content: '提示：按 Esc 退出全屏，+/- 缩放，0 重置，←/→ 切换图片';
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 10000;
+  opacity: 0;
+  animation: fadeInOut 4s ease-in-out;
+}
+
+@keyframes fadeInOut {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .image-controls {
+    gap: 4px;
+  }
+
+  .image-controls .el-button {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+
+  .zoom-info {
+    font-size: 10px;
+    min-width: 28px;
+  }
+
+  .overlay-header {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .image-title {
+    margin-right: 0;
+    text-align: center;
+  }
 }
 </style>
