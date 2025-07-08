@@ -36,5 +36,13 @@ export default async function compressWithBrowserImageCompression(
       undefined,
   }
 
-  return await imageCompression(file, compressionOptions)
+  const compressedBlob = await imageCompression(file, compressionOptions)
+
+  // 如果压缩后文件大于或接近原文件大小，返回原文件
+  // 使用 98% 阈值，避免微小的压缩效果
+  if (compressedBlob.size >= file.size * 0.98) {
+    return file
+  }
+
+  return compressedBlob
 }

@@ -61,8 +61,8 @@ async function smartCanvasCompress(
       undefined,
     )
 
-    // 如果PNG结果比原文件小很多，使用PNG
-    if (pngResult.size < originalSize * 0.8) {
+    // 如果PNG结果比原文件小，使用PNG
+    if (pngResult.size < originalSize * 0.98) {
       return pngResult
     }
 
@@ -77,13 +77,13 @@ async function smartCanvasCompress(
       )
 
       // 选择更小的结果
-      if (jpegResult.size < Math.min(pngResult.size, originalSize * 0.9)) {
+      if (jpegResult.size < Math.min(pngResult.size, originalSize * 0.98)) {
         return jpegResult
       }
     }
 
     // 如果压缩结果都不理想，返回原文件
-    if (pngResult.size >= originalSize * 0.95) {
+    if (pngResult.size >= originalSize * 0.98) {
       return file
     }
 
@@ -108,7 +108,7 @@ async function smartCanvasCompress(
       )
 
       // 如果找到合适的压缩结果，返回
-      if (result.size < originalSize * 0.8) {
+      if (result.size < originalSize * 0.98) {
         return result
       }
     }
@@ -126,8 +126,9 @@ async function smartCanvasCompress(
     quality,
   )
 
-  // 如果压缩后更大，返回原文件
-  if (result.size >= originalSize * 0.95) {
+  // 如果压缩后文件大于或接近原文件大小，返回原文件
+  // 使用 98% 阈值，避免微小的压缩效果
+  if (result.size >= originalSize * 0.98) {
     return file
   }
 

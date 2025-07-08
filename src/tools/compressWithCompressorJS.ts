@@ -32,7 +32,17 @@ export default async function compressWithCompressorJS(
       quality,
       retainExif: preserveExif, // 如果保留EXIF，则不检查方向
       mimeType: file.type,
-      success: (compressedBlob: Blob | File) => resolve(compressedBlob as Blob),
+      success: (compressedBlob: Blob | File) => {
+        const blob = compressedBlob as Blob
+
+        // 如果压缩后文件大于或接近原文件大小，返回原文件
+        // 使用 98% 阈值，避免微小的压缩效果
+        if (blob.size >= file.size * 0.98) {
+          resolve(file)
+        } else {
+          resolve(blob)
+        }
+      },
       error: reject,
     }
 

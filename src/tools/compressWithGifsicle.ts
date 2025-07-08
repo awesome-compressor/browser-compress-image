@@ -60,5 +60,13 @@ export default async function compressWithGifsicle(
     command: [command],
   })
 
-  return result[0]
+  const compressedBlob = result[0]
+
+  // 如果压缩后文件大于或接近原文件大小，返回原文件
+  // 使用 98% 阈值，避免微小的压缩效果
+  if (compressedBlob.size >= file.size * 0.98) {
+    return file
+  }
+
+  return compressedBlob
 }
