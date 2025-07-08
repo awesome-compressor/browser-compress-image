@@ -1865,7 +1865,7 @@ function handleImageMouseUp() {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
   border-radius: 16px;
-  padding: 12px 16px;
+  padding: 8px 16px;
   border: 1px solid rgba(255, 255, 255, 0.3);
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.12),
@@ -1901,7 +1901,7 @@ function handleImageMouseUp() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 20px 20px 0;
+  padding: 10px 20px 0;
   gap: 10px;
   overflow: visible;
 }
