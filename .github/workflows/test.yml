@@ -24,7 +24,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18.18.2
-          cache: pnpm
 
       - name: Setup
         run: npm i -g @antfu/ni
@@ -36,8 +35,6 @@ jobs:
         run: nr lint
 
   test:
-    runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -48,6 +45,8 @@ jobs:
           - os: windows-latest
             node_version: lts/*
       fail-fast: false
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Set git to use LF
@@ -64,7 +63,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node_version }}
-          cache: pnpm
 
       - run: corepack enable
 

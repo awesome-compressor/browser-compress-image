@@ -1155,7 +1155,7 @@ function handleImageMouseUp() {
     </div>
 
     <GitForkVue
-      link="https://github.com/Simon-He95/browser-compress-image"
+      link="https://github.com/awesome-compressor/browser-compress-image"
       position="right"
       type="corners"
       content="Star on GitHub"
