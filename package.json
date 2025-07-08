@@ -1,7 +1,7 @@
 {
   "name": "@awesome-compressor/browser-compress-image",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "packageManager": "pnpm@10.12.4",
   "description": "🚀 A powerful, lightweight browser image compression library with TypeScript support. Compress JPEG, PNG, GIF images with multiple output formats (Blob, File, Base64, ArrayBuffer) and zero dependencies.",
   "author": {
