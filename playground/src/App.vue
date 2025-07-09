@@ -1901,8 +1901,8 @@ function handleImageMouseUp() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 10px 20px 0;
-  gap: 10px;
+  padding: 20px 20px 0;
+  gap: 20px;
   overflow: visible;
 }
 
@@ -2130,7 +2130,7 @@ function handleImageMouseUp() {
   align-items: center;
   gap: 8px;
   height: 45px;
-  min-width: 280px; /* 防止数字变化时工具栏抖动 */
+  min-width: 230px; /* 防止数字变化时工具栏抖动 */
 }
 
 .size-label {
@@ -2337,6 +2337,34 @@ function handleImageMouseUp() {
   }
 }
 
+/* 中等屏幕下隐藏下载按钮文字 */
+@media (max-width: 1110px) {
+  .download-btn-new .download-text {
+    display: none;
+  }
+
+  .download-btn-new {
+    min-width: 48px;
+    justify-content: center;
+    display: flex;
+  }
+}
+
+/* 小屏幕下隐藏操作按钮文字 */
+@media (max-width: 980px) {
+  .add-btn .btn-text,
+  .delete-btn .btn-text {
+    display: none;
+  }
+
+  .add-btn,
+  .delete-btn {
+    min-width: 36px;
+    justify-content: center;
+  }
+ 
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .app-container {
@@ -2403,7 +2431,7 @@ function handleImageMouseUp() {
 
   .images-grid {
     padding: 0 20px;
-    height: 180px;
+    height: fit-content;
     overflow-x: auto;
     overflow-y: hidden;
   }
@@ -2588,7 +2616,7 @@ img-comparison-slider img {
 .images-grid {
   display: flex;
   gap: 12px;
-  height: 280px;
+  height: fit-content;
   overflow-x: auto;
   overflow-y: hidden;
   padding: 10px;
@@ -2656,10 +2684,10 @@ img-comparison-slider img {
   width: 100%;
   height: 100%;
   /* Safari 兼容性 - object-fit 支持 */
-  -o-object-fit: contain;
-  object-fit: contain;
+  -o-object-fit: cover;
+  object-fit: cover;
   /* 为不支持 object-fit 的旧版浏览器提供回退 */
-  background-size: contain;
+  background-size: cover;
   background-repeat: no-repeat;
   background-position: center;
   transition: transform 0.3s ease;
