@@ -1901,7 +1901,7 @@ function handleImageMouseUp() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 20px 20px 0;
+  padding: 20px;
   gap: 20px;
   overflow: visible;
 }
@@ -2276,7 +2276,6 @@ function handleImageMouseUp() {
 .comparison-container-fullscreen {
   width: 100%;
   min-height: 450px;
-  height: 450px;
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
@@ -2337,8 +2336,8 @@ function handleImageMouseUp() {
   }
 }
 
-/* 中等屏幕下隐藏下载按钮文字 */
-@media (max-width: 1110px) {
+/* 中等屏幕下隐藏下载按钮文字 - 仅PC端 */
+@media (max-width: 1110px) and (min-width: 769px) {
   .download-btn-new .download-text {
     display: none;
   }
@@ -2350,8 +2349,8 @@ function handleImageMouseUp() {
   }
 }
 
-/* 小屏幕下隐藏操作按钮文字 */
-@media (max-width: 980px) {
+/* 小屏幕下隐藏操作按钮文字 - 仅PC端 */
+@media (max-width: 980px) and (min-width: 769px) {
   .add-btn .btn-text,
   .delete-btn .btn-text {
     display: none;
@@ -2362,7 +2361,6 @@ function handleImageMouseUp() {
     min-width: 36px;
     justify-content: center;
   }
- 
 }
 
 /* 响应式设计 */
@@ -2511,6 +2509,29 @@ function handleImageMouseUp() {
     justify-content: center;
   }
 
+  /* 移动端确保按钮文字显示 */
+  .download-btn-new .download-text {
+    display: inline !important;
+  }
+
+  .add-btn .btn-text,
+  .delete-btn .btn-text {
+    display: inline !important;
+  }
+
+  .download-btn-new {
+    padding: 12px 16px !important;
+    min-width: auto !important;
+    justify-content: flex-start !important;
+  }
+
+  .add-btn,
+  .delete-btn {
+    padding: 8px 12px !important;
+    min-width: auto !important;
+    justify-content: flex-start !important;
+  }
+
   .upload-btn-hero {
     min-width: auto;
     width: 100%;
@@ -2519,8 +2540,7 @@ function handleImageMouseUp() {
 
   .fullscreen-comparison {
     height: auto;
-    margin-top: 20px;
-    padding: 10px;
+
     overflow: visible;
   }
 
@@ -2530,14 +2550,6 @@ function handleImageMouseUp() {
     height: 300px;
     display: flex;
   }
-
-  .fullscreen-comparison {
-    height: auto;
-    max-height: none;
-    padding: 10px;
-    overflow: auto;
-  }
-
   .comparison-container-fullscreen {
     max-height: 70vh;
     display: flex;
