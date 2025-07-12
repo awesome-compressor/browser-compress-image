@@ -10,6 +10,24 @@ export type CompressResult<T extends CompressResultType> = T extends 'blob'
         ? ArrayBuffer
         : never
 
+/**
+ * 工具配置接口
+ */
+export interface ToolConfig {
+  /**
+   * 工具名称
+   */
+  name: string
+  /**
+   * API 密钥或其他配置参数
+   */
+  key?: string
+  /**
+   * 其他自定义配置参数
+   */
+  [key: string]: any
+}
+
 export interface CompressOptions {
   /**
    * 压缩质量 (0-1)
@@ -62,6 +80,16 @@ export interface CompressOptions {
    * @default 'blob'
    */
   type?: CompressResultType
+
+  /**
+   * 工具配置数组，用于传入各个工具的特定配置
+   * @example
+   * [
+   *   { name: 'tinypng', key: 'your-api-key' },
+   *   { name: 'other-tool', customConfig: 'value' }
+   * ]
+   */
+  toolConfigs?: ToolConfig[]
 }
 
 export interface CompressResultItem<T extends CompressResultType> {

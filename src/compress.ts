@@ -4,12 +4,14 @@ import type {
   CompressResultType,
   MultipleCompressResults,
   CompressResultItem,
+  ToolConfig,
 } from './types'
 import compressWithBrowserImageCompression from './tools/compressWithBrowserImageCompression'
 import compressWithCompressorJS from './tools/compressWithCompressorJS'
 import compressWithCanvas from './tools/compressWithCanvas'
 import compressWithGifsicle from './tools/compressWithGifsicle'
 import convertBlobToType from './convertBlobToType'
+import { compressWithTinyPng } from './tools/compressWithTinyPng' // 引入 TinyPNG 压缩工具
 
 // 开发环境日志工具
 const devLog = {
@@ -40,12 +42,23 @@ type CompressorTool =
   | '@jsquash/png' // 添加 jsquash/png 工具
   | '@jsquash/jpeg' // 添加 jsquash/jpeg 工具
   | 'original' // 添加原文件选项
+  | 'tinypng' // 添加 TinyPNG 工具
 
 // 支持 EXIF 保留的工具
 const EXIF_SUPPORTED_TOOLS: CompressorTool[] = [
   'browser-image-compression',
   'compressorjs',
 ]
+
+/**
+ * 根据工具名称查找对应的配置
+ */
+function findToolConfig(
+  toolName: string,
+  toolConfigs: ToolConfig[],
+): ToolConfig | undefined {
+  return toolConfigs.find((config) => config.name === toolName)
+}
 
 // 压缩结果接口
 interface CompressionAttempt {
@@ -116,6 +129,7 @@ export async function compress<T extends CompressResultType = 'blob'>(
     preserveExif = false,
     returnAllResults = false,
     type: resultType = 'blob' as T,
+    toolConfigs = [],
   } = options
 
   // 使用多工具压缩比对策略
@@ -127,10 +141,11 @@ export async function compress<T extends CompressResultType = 'blob'>(
     maxWidth,
     maxHeight,
     preserveExif,
+    toolConfigs,
   }
 
   // 根据文件类型选择合适的压缩工具组合
-  const tools = file.type.includes('png')
+  let tools = file.type.includes('png')
     ? toolsCollections['png']
     : file.type.includes('gif')
       ? toolsCollections['gif']
@@ -139,6 +154,17 @@ export async function compress<T extends CompressResultType = 'blob'>(
         : file.type.includes('jpeg') || file.type.includes('jpg')
           ? toolsCollections['jpeg']
           : toolsCollections['others']
+
+  // 如果在 toolConfigs 中配置了 TinyPNG，则添加到工具列表中
+  const hasTinyPngConfig = toolConfigs.some(
+    (config) => config.name === 'tinypng',
+  )
+  if (
+    hasTinyPngConfig &&
+    ['png', 'webp', 'jpeg', 'jpg'].some((type) => file.type.includes(type))
+  ) {
+    tools = [...tools, 'tinypng']
+  }
 
   // 如果需要返回所有结果
   if (returnAllResults) {
@@ -171,6 +197,7 @@ async function compressWithMultipleTools(
     maxWidth?: number
     maxHeight?: number
     preserveExif?: boolean
+    toolConfigs?: ToolConfig[]
   },
   tools: CompressorTool[],
 ): Promise<Blob> {
@@ -195,21 +222,39 @@ async function compressWithMultipleTools(
     try {
       let compressedBlob: Blob
 
+      // 查找工具对应的配置
+      const toolConfig = findToolConfig(tool, options.toolConfigs || [])
+
+      // 构建传入压缩工具的选项，合并工具特定配置
+      const toolOptions = {
+        quality: options.quality,
+        mode: options.mode,
+        targetWidth: options.targetWidth,
+        targetHeight: options.targetHeight,
+        maxWidth: options.maxWidth,
+        maxHeight: options.maxHeight,
+        preserveExif: options.preserveExif,
+        ...toolConfig, // 合并工具特定配置
+      }
+
       switch (tool) {
         case 'browser-image-compression':
           compressedBlob = await compressWithBrowserImageCompression(
             file,
-            options,
+            toolOptions,
           )
           break
         case 'compressorjs':
-          compressedBlob = await compressWithCompressorJS(file, options)
+          compressedBlob = await compressWithCompressorJS(file, toolOptions)
           break
         case 'gifsicle':
-          compressedBlob = await compressWithGifsicle(file, options)
+          compressedBlob = await compressWithGifsicle(file, toolOptions)
           break
         case 'canvas':
-          compressedBlob = await compressWithCanvas(file, options)
+          compressedBlob = await compressWithCanvas(file, toolOptions)
+          break
+        case 'tinypng':
+          compressedBlob = await compressWithTinyPng(file, toolOptions)
           break
         default:
           throw new Error(`Unknown compression tool: ${tool}`)
@@ -312,6 +357,7 @@ async function compressWithMultipleToolsAndReturnAll<
     maxWidth?: number
     maxHeight?: number
     preserveExif?: boolean
+    toolConfigs?: ToolConfig[]
   },
   tools: CompressorTool[],
   resultType: T,
@@ -338,21 +384,39 @@ async function compressWithMultipleToolsAndReturnAll<
     try {
       let compressedBlob: Blob
 
+      // 查找工具对应的配置
+      const toolConfig = findToolConfig(tool, options.toolConfigs || [])
+
+      // 构建传入压缩工具的选项，合并工具特定配置
+      const toolOptions = {
+        quality: options.quality,
+        mode: options.mode,
+        targetWidth: options.targetWidth,
+        targetHeight: options.targetHeight,
+        maxWidth: options.maxWidth,
+        maxHeight: options.maxHeight,
+        preserveExif: options.preserveExif,
+        ...toolConfig, // 合并工具特定配置
+      }
+
       switch (tool) {
         case 'browser-image-compression':
           compressedBlob = await compressWithBrowserImageCompression(
             file,
-            options,
+            toolOptions,
           )
           break
         case 'compressorjs':
-          compressedBlob = await compressWithCompressorJS(file, options)
+          compressedBlob = await compressWithCompressorJS(file, toolOptions)
           break
         case 'gifsicle':
-          compressedBlob = await compressWithGifsicle(file, options)
+          compressedBlob = await compressWithGifsicle(file, toolOptions)
           break
         case 'canvas':
-          compressedBlob = await compressWithCanvas(file, options)
+          compressedBlob = await compressWithCanvas(file, toolOptions)
+          break
+        case 'tinypng':
+          compressedBlob = await compressWithTinyPng(file, toolOptions)
           break
         default:
           throw new Error(`Unknown compression tool: ${tool}`)
@@ -537,6 +601,10 @@ export async function compressWithStats(
       typeof qualityOrOptions === 'object'
         ? qualityOrOptions.preserveExif || false
         : false,
+    toolConfigs:
+      typeof qualityOrOptions === 'object'
+        ? qualityOrOptions.toolConfigs || []
+        : [],
   })
 }
 
@@ -551,6 +619,7 @@ async function compressWithMultipleToolsWithStats(
     maxWidth?: number
     maxHeight?: number
     preserveExif?: boolean
+    toolConfigs?: ToolConfig[]
   },
 ): Promise<CompressionStats> {
   const totalStartTime = performance.now()
@@ -563,6 +632,17 @@ async function compressWithMultipleToolsWithStats(
       : file.type.includes('webp')
         ? toolsCollections['webp']
         : toolsCollections['others']
+
+  // 如果在 toolConfigs 中配置了 TinyPNG，则添加到工具列表中
+  const hasTinyPngConfig = options.toolConfigs?.some(
+    (config) => config.name === 'tinypng',
+  )
+  if (
+    hasTinyPngConfig &&
+    ['png', 'webp', 'jpeg', 'jpg'].some((type) => file.type.includes(type))
+  ) {
+    tools = [...tools, 'tinypng']
+  }
 
   // 当需要保留 EXIF 时，过滤掉不支持的工具
   if (options.preserveExif) {
@@ -584,21 +664,39 @@ async function compressWithMultipleToolsWithStats(
     try {
       let compressedBlob: Blob
 
+      // 查找工具对应的配置
+      const toolConfig = findToolConfig(tool, options.toolConfigs || [])
+
+      // 构建传入压缩工具的选项，合并工具特定配置
+      const toolOptions = {
+        quality: options.quality,
+        mode: options.mode,
+        targetWidth: options.targetWidth,
+        targetHeight: options.targetHeight,
+        maxWidth: options.maxWidth,
+        maxHeight: options.maxHeight,
+        preserveExif: options.preserveExif,
+        ...toolConfig, // 合并工具特定配置
+      }
+
       switch (tool) {
         case 'browser-image-compression':
           compressedBlob = await compressWithBrowserImageCompression(
             file,
-            options,
+            toolOptions,
           )
           break
         case 'compressorjs':
-          compressedBlob = await compressWithCompressorJS(file, options)
+          compressedBlob = await compressWithCompressorJS(file, toolOptions)
           break
         case 'gifsicle':
-          compressedBlob = await compressWithGifsicle(file, options)
+          compressedBlob = await compressWithGifsicle(file, toolOptions)
           break
         case 'canvas':
-          compressedBlob = await compressWithCanvas(file, options)
+          compressedBlob = await compressWithCanvas(file, toolOptions)
+          break
+        case 'tinypng':
+          compressedBlob = await compressWithTinyPng(file, toolOptions)
           break
         default:
           throw new Error(`Unknown compression tool: ${tool}`)
