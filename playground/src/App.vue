@@ -10,6 +10,10 @@ import {
   ZoomOut,
   FullScreen,
   Aim,
+  Setting,
+  Key,
+  Plus,
+  Delete,
 } from '@element-plus/icons-vue'
 import GitForkVue from '@simon_he/git-fork-vue'
 import { ElMessage } from 'element-plus'
@@ -52,6 +56,112 @@ const imageTransform = ref({ x: 0, y: 0 }) // 图片位移
 
 // 全局配置
 const preserveExif = ref(false) // EXIF 信息保留选项
+
+// 设置面板相关状态
+const showSettingsPanel = ref(false)
+
+// 工具配置接口
+interface ToolConfig {
+  name: string
+  key: string
+  enabled: boolean
+}
+
+// 可用的工具选项
+const availableTools = ['tinypng']
+
+// 工具配置数组
+const toolConfigs = ref<ToolConfig[]>([])
+
+// 临时工具配置（用于设置面板编辑）
+const tempToolConfigs = ref<ToolConfig[]>([])
+
+// 打开设置面板时，复制当前配置到临时配置
+const openSettingsPanel = () => {
+  tempToolConfigs.value = JSON.parse(JSON.stringify(toolConfigs.value))
+  showSettingsPanel.value = true
+}
+
+// 关闭设置面板时，不保存临时配置的更改
+const closeSettingsPanel = () => {
+  showSettingsPanel.value = false
+  // 不更新 toolConfigs，保持原有配置
+}
+
+// 从 localStorage 恢复设置
+const loadSettings = () => {
+  try {
+    const savedConfigs = localStorage.getItem('toolConfigs')
+    if (savedConfigs) {
+      toolConfigs.value = JSON.parse(savedConfigs)
+    } else {
+      // 默认配置
+      toolConfigs.value = [
+        {
+          name: 'tinypng',
+          key: '',
+          enabled: false,
+        },
+      ]
+    }
+  } catch (error) {
+    console.warn('Failed to load settings from localStorage:', error)
+    // 使用默认配置
+    toolConfigs.value = [
+      {
+        name: 'tinypng',
+        key: '',
+        enabled: false,
+      },
+    ]
+  }
+}
+
+// 保存设置到 localStorage（静默保存，不显示提示）
+const saveSettingsSilent = () => {
+  try {
+    localStorage.setItem('toolConfigs', JSON.stringify(toolConfigs.value))
+  } catch (error) {
+    console.error('Failed to save settings:', error)
+  }
+}
+
+// 保存临时配置到实际配置并保存到 localStorage（显示成功提示）
+const saveSettings = () => {
+  try {
+    // 将临时配置复制到实际配置
+    toolConfigs.value = JSON.parse(JSON.stringify(tempToolConfigs.value))
+    // 保存到 localStorage
+    localStorage.setItem('toolConfigs', JSON.stringify(toolConfigs.value))
+    ElMessage.success('Settings saved successfully!')
+    // 关闭设置面板
+    showSettingsPanel.value = false
+  } catch (error) {
+    console.error('Failed to save settings:', error)
+    ElMessage.error('Failed to save settings')
+  }
+}
+
+// 添加新的工具配置（操作临时配置）
+const addToolConfig = () => {
+  // 获取已使用的工具名称
+  const usedTools = tempToolConfigs.value.map((config) => config.name)
+  // 找到第一个未使用的工具
+  const availableTool = availableTools.find((tool) => !usedTools.includes(tool))
+
+  if (availableTool) {
+    tempToolConfigs.value.push({
+      name: availableTool,
+      key: '',
+      enabled: false,
+    })
+  }
+}
+
+// 删除工具配置（操作临时配置）
+const removeToolConfig = (index: number) => {
+  tempToolConfigs.value.splice(index, 1)
+}
 
 // 图片列表状态
 const imageItems = ref<ImageItem[]>([])
@@ -187,8 +297,19 @@ const allCompressed = computed(
     compressedCount.value === imageItems.value.length,
 )
 
+// 检查是否可以添加新的工具配置
+const canAddToolConfig = computed(() => {
+  // 获取已使用的工具名称
+  const usedTools = tempToolConfigs.value.map((config) => config.name)
+  // 检查是否还有未使用的工具
+  return availableTools.some((tool) => !usedTools.includes(tool))
+})
+
 // 注册事件监听器
 onMounted(() => {
+  // 加载保存的设置
+  loadSettings()
+
   fileRef.value!.addEventListener('change', handleFileInputChange)
 
   // 添加全局拖拽事件监听
@@ -658,10 +779,16 @@ async function compressImage(item: ImageItem): Promise<void> {
   item.compressionError = undefined
 
   try {
+    // 过滤出启用的工具配置
+    const enabledToolConfigs = toolConfigs.value.filter(
+      (config) => config.enabled && config.key.trim(),
+    )
+
     const compressedBlob = await compress(item.file, {
       quality: item.quality / 100, // 使用图片自己的质量设置
       type: 'blob',
       preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
+      toolConfigs: enabledToolConfigs, // 传入工具配置
     })
 
     if (!compressedBlob) {
@@ -1147,13 +1274,6 @@ function handleImageMouseUp() {
       </div>
     </div>
 
-    <!-- Background Elements -->
-    <div class="bg-decoration">
-      <div class="bg-circle bg-circle-1" />
-      <div class="bg-circle bg-circle-2" />
-      <div class="bg-circle bg-circle-3" />
-    </div>
-
     <GitForkVue
       link="https://github.com/awesome-compressor/browser-compress-image"
       position="right"
@@ -1175,6 +1295,25 @@ function handleImageMouseUp() {
 
     <!-- Main Content -->
     <main class="main-content">
+      <!-- Settings Section - Always visible -->
+      <section class="settings-section-main">
+        <div class="settings-container">
+          <el-button
+            type="primary"
+            class="settings-btn-main"
+            @click="openSettingsPanel"
+            :icon="Setting"
+            plain
+          >
+            Configure Compression Tools
+          </el-button>
+          <p class="settings-hint">
+            Configure API keys and enable compression tools before uploading
+            images
+          </p>
+        </div>
+      </section>
+
       <!-- 初始上传区域 - 仅在没有图片时显示 -->
       <section v-if="!hasImages" class="upload-zone">
         <button class="upload-btn-hero" @click="uploadImages">
@@ -1580,18 +1719,149 @@ function handleImageMouseUp() {
       multiple
       hidden
     />
+
+    <!-- 设置面板 -->
+    <el-dialog
+      v-model="showSettingsPanel"
+      title="Settings"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <div class="settings-content">
+        <div class="settings-section">
+          <h3 class="settings-title">
+            <el-icon><Key /></el-icon>
+            Tool Configurations
+          </h3>
+          <p class="settings-description">
+            Configure API keys and settings for different compression tools.
+          </p>
+
+          <div class="tool-config-list">
+            <div
+              v-for="(config, index) in tempToolConfigs"
+              :key="index"
+              class="tool-config-item"
+            >
+              <div class="tool-header">
+                <div class="tool-info">
+                  <el-icon class="tool-icon"><Picture /></el-icon>
+                  <span class="tool-name">{{ config.name.toUpperCase() }}</span>
+                  <el-tag
+                    :type="config.enabled && config.key ? 'success' : 'info'"
+                    size="small"
+                  >
+                    {{ config.enabled && config.key ? 'Enabled' : 'Disabled' }}
+                  </el-tag>
+                </div>
+                <div class="tool-actions">
+                  <el-switch
+                    v-model="config.enabled"
+                    :disabled="!config.key.trim()"
+                  />
+                  <el-button
+                    v-if="tempToolConfigs.length > 1"
+                    type="danger"
+                    size="small"
+                    :icon="Delete"
+                    circle
+                    @click="removeToolConfig(index)"
+                  />
+                </div>
+              </div>
+
+              <div class="tool-config">
+                <el-form-item label="Tool">
+                  <el-select v-model="config.name" placeholder="Select a tool">
+                    <el-option
+                      v-for="tool in availableTools"
+                      :key="tool"
+                      :label="tool.toUpperCase()"
+                      :value="tool"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-form-item label="API Key">
+                  <el-input
+                    v-model="config.key"
+                    type="password"
+                    placeholder="Enter your API key"
+                    show-password
+                    clearable
+                  >
+                    <template #prepend>
+                      <el-icon><Key /></el-icon>
+                    </template>
+                  </el-input>
+                </el-form-item>
+
+                <div v-if="config.name === 'tinypng'" class="tool-help">
+                  <p class="help-text">
+                    <strong>TinyPNG API Key:</strong>
+                    Get your free API key from
+                    <a
+                      href="https://tinypng.com/developers"
+                      target="_blank"
+                      class="help-link"
+                    >
+                      TinyPNG Developer Portal
+                    </a>
+                  </p>
+                  <p class="help-note">
+                    💡 Free tier: 500 compressions per month
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="canAddToolConfig" class="add-tool-section">
+            <el-button type="primary" :icon="Plus" @click="addToolConfig">
+              Add Tool Configuration
+            </el-button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3 class="settings-title">
+            <el-icon><Setting /></el-icon>
+            Usage Information
+          </h3>
+          <div class="usage-info">
+            <p>
+              • <strong>TinyPNG:</strong> Online service with excellent
+              compression for PNG, JPEG, and WebP files
+            </p>
+            <p>
+              • When enabled, configured tools will be included in the
+              compression process
+            </p>
+            <p>
+              • Settings are automatically saved to your browser's local storage
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="closeSettingsPanel">Cancel</el-button>
+          <el-button type="primary" @click="saveSettings"> Save </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .app-container {
-  height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   position: relative;
   overflow-x: hidden;
-  overflow-y: hidden; /* PC端禁用垂直滚动 */
+  min-height: 100vh;
   /* 优化滚动性能 */
   -webkit-overflow-scrolling: touch;
   /* 减少重绘 */
@@ -1802,10 +2072,45 @@ function handleImageMouseUp() {
   max-width: 100vw;
   margin: 0;
   padding: 0;
-  flex: 1;
-  min-height: 0; /* 允许弹性项目缩小 */
-  overflow-y: auto; /* 内容区域可滚动 */
-  overflow-x: hidden;
+}
+
+/* Settings Section */
+.settings-section-main {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 0 20px 30px;
+}
+
+.settings-container {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.settings-btn-main {
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  padding: 12px 24px !important;
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+  transition: all 0.3s ease !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.settings-btn-main:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  border-color: rgba(255, 255, 255, 0.5) !important;
+  transform: translateY(-2px);
+  color: white !important;
+}
+
+.settings-hint {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  margin: 12px 0 0 0;
+  font-weight: 300;
 }
 
 /* 英雄上传区域 */
@@ -2313,13 +2618,6 @@ function handleImageMouseUp() {
 @media (min-width: 769px) {
   .app-container {
     overflow-y: hidden; /* PC端完全禁用滚动 */
-    height: 100vh;
-    max-height: 100vh;
-  }
-
-  .main-content {
-    overflow-y: auto; /* 只有主内容区域可滚动 */
-    max-height: calc(100vh - 120px); /* 减去header高度 */
   }
 
   .header-section {
@@ -2395,6 +2693,19 @@ function handleImageMouseUp() {
     max-width: 600px;
   }
 
+  .settings-section-main {
+    padding: 0 20px 20px;
+  }
+
+  .settings-btn-main {
+    font-size: 14px !important;
+    padding: 10px 20px !important;
+  }
+
+  .settings-hint {
+    font-size: 13px;
+  }
+
   .main-title {
     font-size: 2.5rem;
   }
@@ -2423,7 +2734,6 @@ function handleImageMouseUp() {
 
   .images-section {
     padding: 10px;
-    overflow: visible;
   }
 
   .images-grid {
@@ -3176,5 +3486,151 @@ img-comparison-slider img {
     margin-right: 0;
     text-align: center;
   }
+}
+
+/* 设置面板样式 */
+.settings-content {
+  padding: 0;
+}
+
+.settings-section {
+  margin-bottom: 24px;
+}
+
+.settings-section:last-child {
+  margin-bottom: 0;
+}
+
+.settings-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 8px 0;
+}
+
+.settings-description {
+  color: #666;
+  font-size: 14px;
+  margin: 0 0 16px 0;
+}
+
+.tool-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tool-config-item {
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fafbfc;
+}
+
+.tool-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.tool-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-icon {
+  color: #667eea;
+  font-size: 18px;
+}
+
+.tool-name {
+  font-weight: 600;
+  color: #333;
+  font-size: 14px;
+}
+
+.tool-config {
+  margin-top: 12px;
+}
+
+.tool-help {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f0f7ff;
+  border: 1px solid #d1ecf1;
+  border-radius: 6px;
+}
+
+.help-text {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.help-link {
+  color: #667eea;
+  text-decoration: none;
+}
+
+.help-link:hover {
+  text-decoration: underline;
+}
+
+.help-note {
+  margin: 0;
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+}
+
+.add-tool-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e1e5e9;
+}
+
+.usage-info {
+  color: #666;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.usage-info p {
+  margin: 0 0 8px 0;
+}
+
+.usage-info p:last-child {
+  margin-bottom: 0;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.settings-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  backdrop-filter: blur(10px);
+}
+
+.settings-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
 }
 </style>
