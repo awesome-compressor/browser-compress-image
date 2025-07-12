@@ -1874,7 +1874,6 @@ function handleImageMouseUp() {
   align-items: center;
   gap: 12px;
   max-width: 90vw;
-  overflow: hidden;
 }
 
 .toolbar-section {
