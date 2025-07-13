@@ -18,6 +18,7 @@ import {
 import GitForkVue from '@simon_he/git-fork-vue'
 import { ElMessage } from 'element-plus'
 import 'img-comparison-slider/dist/styles.css'
+import JSZip from 'jszip'
 import { download } from 'lazy-js-utils'
 import { h } from 'vue'
 import { compress } from '../../src'
@@ -932,23 +933,28 @@ function uploadImages() {
   document.getElementById('file')?.click()
 }
 
-// 下载单个图片
+// 生成带时间戳的文件夹名称
+function generateFolderName(): string {
+  const now = new Date()
+  const timestamp = now
+    .toISOString()
+    .replace(/:/g, '-')
+    .replace(/\./g, '-')
+    .replace('T', '_')
+    .slice(0, 19) // 取到秒级别: YYYY-MM-DD_HH-MM-SS
+  return `browser-compress-image_${timestamp}`
+}
+
+// 下载单个图片（保持原始文件名）
 async function downloadImage(item: ImageItem) {
   if (!item.compressedUrl) return
 
   try {
     const originalName = item.file.name
-    const lastDotIndex = originalName.lastIndexOf('.')
-    const nameWithoutExt =
-      lastDotIndex > 0 ? originalName.substring(0, lastDotIndex) : originalName
-    const extension =
-      lastDotIndex > 0 ? originalName.substring(lastDotIndex) : ''
-    const compressedFileName = `${nameWithoutExt}_compressed${extension}`
-
-    download(item.compressedUrl, compressedFileName)
+    download(item.compressedUrl, originalName)
 
     ElMessage({
-      message: `Downloaded: ${compressedFileName}`,
+      message: `Downloaded: ${originalName}`,
       type: 'success',
       duration: 2000,
     })
@@ -960,7 +966,7 @@ async function downloadImage(item: ImageItem) {
   }
 }
 
-// 批量下载所有图片
+// 批量下载所有图片（创建 ZIP 压缩包）
 async function downloadAllImages() {
   if (downloading.value) return
 
@@ -978,21 +984,45 @@ async function downloadAllImages() {
   downloading.value = true
 
   try {
+    // 生成带时间戳的文件夹名称
+    const folderName = generateFolderName()
+
+    // 创建 JSZip 实例
+    const zip = new JSZip()
+    const folder = zip.folder(folderName)
+
+    if (!folder) {
+      throw new Error('Failed to create folder in ZIP')
+    }
+
     // 添加延迟显示加载状态
     await new Promise((resolve) => setTimeout(resolve, 300))
 
+    // 将所有压缩图片添加到 ZIP 中
     for (const item of downloadableItems) {
-      await downloadImage(item)
-      // 添加小延迟避免浏览器下载限制
-      await new Promise((resolve) => setTimeout(resolve, 100))
+      if (item.compressedUrl) {
+        // 获取压缩后的 Blob 数据
+        const response = await fetch(item.compressedUrl)
+        const blob = await response.blob()
+
+        // 使用原始文件名添加到 ZIP 文件夹中
+        folder.file(item.file.name, blob)
+      }
     }
+
+    // 生成 ZIP 文件
+    const zipBlob = await zip.generateAsync({ type: 'blob' })
+
+    // 下载 ZIP 文件
+    const zipFileName = `${folderName}.zip`
+    download(URL.createObjectURL(zipBlob), zipFileName)
 
     ElMessage({
       message: h('div', { style: 'line-height: 1.5;' }, [
         h(
           'div',
           { style: 'color: #16a34a; font-weight: 500; margin-bottom: 4px;' },
-          `Successfully downloaded ${downloadableItems.length} images!`,
+          `Successfully downloaded ${downloadableItems.length} images in ${zipFileName}`,
         ),
         h(
           'div',
@@ -1006,6 +1036,7 @@ async function downloadAllImages() {
       duration: 4000,
     })
   } catch (error) {
+    console.error('Batch download error:', error)
     ElMessage({
       message: 'Batch download failed. Please try again.',
       type: 'error',
