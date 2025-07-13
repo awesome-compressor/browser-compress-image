@@ -56,6 +56,8 @@ const imageTransform = ref({ x: 0, y: 0 }) // 图片位移
 
 // 全局配置
 const preserveExif = ref(false) // EXIF 信息保留选项
+const globalQuality = ref(0.6) // 全局质量设置
+const globalQualityDragging = ref(0.6) // 拖动过程中的临时质量值
 
 // 设置面板相关状态
 const showSettingsPanel = ref(false)
@@ -115,6 +117,9 @@ const loadSettings = () => {
       },
     ]
   }
+
+  // 同步初始化拖动状态
+  globalQualityDragging.value = globalQuality.value
 }
 
 // 保存设置到 localStorage（静默保存，不显示提示）
@@ -161,6 +166,55 @@ const addToolConfig = () => {
 // 删除工具配置（操作临时配置）
 const removeToolConfig = (index: number) => {
   tempToolConfigs.value.splice(index, 1)
+}
+
+// 全局质量百分比计算属性 - 显示拖动中的值
+const globalQualityPercent = computed(() =>
+  Math.round(globalQualityDragging.value * 100),
+)
+
+// 全局质量拖动输入处理 - 只更新显示，不触发重压缩
+const handleGlobalQualityInput = (value: number) => {
+  globalQualityDragging.value = value / 100
+}
+
+// 全局质量拖动结束处理 - 触发重压缩
+const handleGlobalQualitySliderChange = async (value: number) => {
+  const newGlobalQuality = value / 100
+  globalQualityDragging.value = newGlobalQuality
+  await handleGlobalQualityChange(newGlobalQuality)
+}
+
+// 修改全局质量变化处理函数 - 自动更新所有图片
+const handleGlobalQualityChange = async (newGlobalQuality: number) => {
+  globalQuality.value = newGlobalQuality
+  globalQualityDragging.value = newGlobalQuality // 同步拖动状态
+
+  // 更新所有图片质量为新的全局质量
+  const recompressPromises = imageItems.value.map(async (item) => {
+    item.quality = newGlobalQuality
+    // 如果图片没有在压缩中，自动重新压缩
+    if (!item.isCompressing) {
+      await compressImage(item)
+    }
+  })
+
+  // 并行处理所有图片的重新压缩
+  await Promise.all(recompressPromises)
+}
+
+// 单个图片质量变化处理
+const handleImageQualityChange = async (
+  item: ImageItem,
+  newQualityPercent: number,
+) => {
+  // 更新质量值 (转换为0-1范围)
+  item.quality = newQualityPercent / 100
+
+  // 如果图片没有在压缩中，自动重新压缩
+  if (!item.isCompressing) {
+    await compressImage(item)
+  }
 }
 
 // 图片列表状态
@@ -764,7 +818,7 @@ async function addNewImages(files: File[]) {
     originalUrl: URL.createObjectURL(file),
     originalSize: file.size,
     isCompressing: false,
-    quality: 60, // 默认质量
+    quality: globalQuality.value, // 使用全局质量作为默认值
   }))
   // 自动开始压缩所有新添加的图片
   await compressImages(newItems)
@@ -785,7 +839,7 @@ async function compressImage(item: ImageItem): Promise<void> {
     )
 
     const compressedBlob = await compress(item.file, {
-      quality: item.quality / 100, // 使用图片自己的质量设置
+      quality: item.quality, // 直接使用图片的质量设置（已经是0-1范围）
       type: 'blob',
       preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
       toolConfigs: enabledToolConfigs, // 传入工具配置
@@ -832,12 +886,6 @@ async function compressImages(items: ImageItem[] = imageItems.value) {
   } finally {
     isCompressingAll.value = false
   }
-}
-
-// 单张图片质量改变处理
-async function handleImageQualityChange(item: ImageItem, newQuality: number) {
-  item.quality = newQuality
-  await compressImage(item)
 }
 
 // 处理 EXIF 保留选项变化
@@ -1396,6 +1444,23 @@ function handleImageMouseUp() {
               <span class="exif-label">Preserve EXIF</span>
             </el-checkbox>
           </div>
+
+          <div class="quality-control">
+            <span class="quality-label-small"
+              >Global Quality: {{ globalQualityPercent }}%</span
+            >
+            <el-slider
+              :model-value="globalQualityPercent"
+              @input="handleGlobalQualityInput"
+              @change="handleGlobalQualitySliderChange"
+              :max="100"
+              :step="1"
+              :min="1"
+              class="global-quality-slider"
+              :show-tooltip="false"
+              size="small"
+            />
+          </div>
         </div>
 
         <div v-if="allCompressed" class="toolbar-divider" />
@@ -1479,10 +1544,10 @@ function handleImageMouseUp() {
               <!-- 独立的质量控制 -->
               <div class="image-quality-control">
                 <span class="quality-label-small"
-                  >Quality: {{ item.quality }}%</span
+                  >Quality: {{ Math.round(item.quality * 100) }}%</span
                 >
                 <el-slider
-                  v-model="item.quality"
+                  :model-value="Math.round(item.quality * 100)"
                   :max="100"
                   :step="1"
                   :min="1"
@@ -2491,6 +2556,55 @@ function handleImageMouseUp() {
   margin-left: 6px;
 }
 
+.quality-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: 20px;
+}
+
+/* 全局质量滑块 - 与单个图片保持一致的样式 */
+.global-quality-slider {
+  width: 100%;
+}
+
+.global-quality-slider .el-slider__runway {
+  height: 4px;
+}
+
+.global-quality-slider .el-slider__button {
+  width: 12px;
+  height: 12px;
+}
+
+/* 单个图片质量控制 */
+.image-quality-control {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.quality-label-small {
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.image-quality-slider {
+  width: 100%;
+}
+
+.image-quality-slider .el-slider__runway {
+  height: 4px;
+}
+
+.image-quality-slider .el-slider__button {
+  width: 12px;
+  height: 12px;
+}
+
 /* 下载按钮区域 */
 .download-section {
   justify-content: center;
@@ -2799,6 +2913,23 @@ function handleImageMouseUp() {
     flex-direction: row;
     justify-content: center;
     min-width: auto;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .quality-control {
+    min-width: 140px;
+    margin-left: 0;
+  }
+
+  .image-quality-control {
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+
+  .quality-label-small {
+    font-size: 10px;
+    margin-bottom: 2px;
   }
 
   .toolbar-divider {

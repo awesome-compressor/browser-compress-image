@@ -95,19 +95,19 @@ console.log('压缩统计:', {
 
 ## 🏆 为什么选择我们？
 
-| 特性              | 我们 | 其他库 |
-| ----------------- | ---- | ------ |
-| 多输出格式        | ✅   | ❌     |
-| 多工具引擎比对    | ✅   | ❌     |
-| TinyPNG 在线压缩  | ✅   | ❌     |
-| 智能缓存机制      | ✅   | ❌     |
-| 工具配置管理      | ✅   | ❌     |
-| TypeScript 支持   | ✅   | 部分   |
-| GIF/WebP 压缩     | ✅   | 很少   |
-| 批量/粘贴上传     | ✅   | ❌     |
-| 文件夹上传        | ✅   | ❌     |
-| 零配置使用        | ✅   | ❌     |
-| 文档完善          | ✅   | 一般   |
+| 特性             | 我们 | 其他库 |
+| ---------------- | ---- | ------ |
+| 多输出格式       | ✅   | ❌     |
+| 多工具引擎比对   | ✅   | ❌     |
+| TinyPNG 在线压缩 | ✅   | ❌     |
+| 智能缓存机制     | ✅   | ❌     |
+| 工具配置管理     | ✅   | ❌     |
+| TypeScript 支持  | ✅   | 部分   |
+| GIF/WebP 压缩    | ✅   | 很少   |
+| 批量/粘贴上传    | ✅   | ❌     |
+| 文件夹上传       | ✅   | ❌     |
+| 零配置使用       | ✅   | ❌     |
+| 文档完善         | ✅   | 一般   |
 
 ## 📦 安装
 
@@ -154,9 +154,9 @@ const compressedBlob = await compress(file, {
     {
       name: 'tinypng',
       key: 'your-tinypng-api-key', // 从 https://tinypng.com/developers 获取
-      enabled: true
-    }
-  ]
+      enabled: true,
+    },
+  ],
 })
 
 // TinyPNG 支持尺寸调整
@@ -168,13 +168,14 @@ const resizedAndCompressed = await compress(file, {
     {
       name: 'tinypng',
       key: 'your-api-key',
-      enabled: true
-    }
-  ]
+      enabled: true,
+    },
+  ],
 })
 ```
 
 **TinyPNG 特色功能：**
+
 - 🎯 **智能压缩** - AI 算法优化，保持最佳视觉质量
 - 📐 **尺寸调整** - 在压缩的同时调整图片尺寸
 - 🌍 **格式支持** - JPEG、PNG、WebP 全覆盖
@@ -186,10 +187,10 @@ const resizedAndCompressed = await compress(file, {
 TinyPNG 压缩结果会自动缓存，避免重复 API 调用：
 
 ```typescript
-import { 
-  clearTinyPngCache, 
+import {
+  clearTinyPngCache,
   getTinyPngCacheInfo,
-  configureTinyPngCache 
+  configureTinyPngCache,
 } from '@awesome-compressor/browser-compress-image'
 
 // 查看缓存状态
@@ -374,13 +375,13 @@ interface CompressionStats {
 
 #### 🛠️ 支持的压缩工具
 
-| 工具                      | 标识符                        | 适用格式    | EXIF支持 | 特点                       |
-| ------------------------- | ----------------------------- | ----------- | -------- | -------------------------- |
-| Browser Image Compression | `'browser-image-compression'` | JPEG, PNG   | ✅       | 快速压缩，兼容性好         |
-| CompressorJS              | `'compressorjs'`              | JPEG, PNG   | ⚠️       | 轻量级，配置灵活           |
-| Canvas                    | `'canvas'`                    | 所有格式    | ❌       | 原生浏览器 API，通用性强   |
-| Gifsicle                  | `'gifsicle'`                  | GIF         | N/A      | GIF 专用压缩引擎           |
-| TinyPNG                   | `'tinypng'`                   | JPEG, PNG, WebP | ✅   | 在线压缩服务，效果卓越     |
+| 工具                      | 标识符                        | 适用格式        | EXIF支持 | 特点                     |
+| ------------------------- | ----------------------------- | --------------- | -------- | ------------------------ |
+| Browser Image Compression | `'browser-image-compression'` | JPEG, PNG       | ✅       | 快速压缩，兼容性好       |
+| CompressorJS              | `'compressorjs'`              | JPEG, PNG       | ⚠️       | 轻量级，配置灵活         |
+| Canvas                    | `'canvas'`                    | 所有格式        | ❌       | 原生浏览器 API，通用性强 |
+| Gifsicle                  | `'gifsicle'`                  | GIF             | N/A      | GIF 专用压缩引擎         |
+| TinyPNG                   | `'tinypng'`                   | JPEG, PNG, WebP | ✅       | 在线压缩服务，效果卓越   |
 
 **EXIF 支持说明：**
 
@@ -495,9 +496,9 @@ const optimizedFile = results.bestResult
 
 ```typescript
 interface ToolConfig {
-  name: string      // 工具名称，如 'tinypng'
-  key: string       // API 密钥或配置参数
-  enabled: boolean  // 是否启用此工具
+  name: string // 工具名称，如 'tinypng'
+  key: string // API 密钥或配置参数
+  enabled: boolean // 是否启用此工具
 }
 
 // 使用示例
@@ -505,13 +506,13 @@ const toolConfigs: ToolConfig[] = [
   {
     name: 'tinypng',
     key: 'your-tinypng-api-key',
-    enabled: true
-  }
+    enabled: true,
+  },
 ]
 
 const result = await compress(file, {
   quality: 0.8,
-  toolConfigs
+  toolConfigs,
 })
 ```
 
