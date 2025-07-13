@@ -70,8 +70,9 @@ console.log('压缩统计:', {
 
 - **多格式支持** - JPEG、PNG、GIF、WebP 全覆盖
 - **多输出类型** - Blob、File、Base64、ArrayBuffer 任你选择
-- **多工具引擎** - 集成 CompressorJS、Canvas、browser-image-compression 等多种压缩算法
+- **多工具引擎** - 集成 TinyPNG、CompressorJS、Canvas、browser-image-compression 等多种压缩算法
 - **智能优选** - 自动比对多工具压缩结果，选择最优质量与体积的方案
+- **在线压缩** - 支持 TinyPNG 在线压缩服务，获得业界领先的压缩效果
 
 ### � 上传方式
 
@@ -89,19 +90,24 @@ console.log('压缩统计:', {
 - **灵活配置** - 自定义压缩质量和输出格式
 - **智能过滤** - 根据 EXIF 需求自动选择合适的压缩工具
 - **多结果比较** - 支持返回所有工具的压缩结果进行性能分析
+- **智能缓存** - LRU 算法缓存压缩结果，避免重复 API 调用
+- **工具配置** - 支持为不同压缩工具配置 API 密钥等参数
 
 ## 🏆 为什么选择我们？
 
-| 特性            | 我们 | 其他库 |
-| --------------- | ---- | ------ |
-| 多输出格式      | ✅   | ❌     |
-| 多工具引擎比对  | ✅   | ❌     |
-| TypeScript 支持 | ✅   | 部分   |
-| GIF/WebP 压缩   | ✅   | 很少   |
-| 批量/粘贴上传   | ✅   | ❌     |
-| 文件夹上传      | ✅   | ❌     |
-| 零配置使用      | ✅   | ❌     |
-| 文档完善        | ✅   | 一般   |
+| 特性              | 我们 | 其他库 |
+| ----------------- | ---- | ------ |
+| 多输出格式        | ✅   | ❌     |
+| 多工具引擎比对    | ✅   | ❌     |
+| TinyPNG 在线压缩  | ✅   | ❌     |
+| 智能缓存机制      | ✅   | ❌     |
+| 工具配置管理      | ✅   | ❌     |
+| TypeScript 支持   | ✅   | 部分   |
+| GIF/WebP 压缩     | ✅   | 很少   |
+| 批量/粘贴上传     | ✅   | ❌     |
+| 文件夹上传        | ✅   | ❌     |
+| 零配置使用        | ✅   | ❌     |
+| 文档完善          | ✅   | 一般   |
 
 ## 📦 安装
 
@@ -132,6 +138,70 @@ const compressedWithExif = await compress(file, {
   quality: 0.8,
   preserveExif: true,
 })
+```
+
+### 🌐 TinyPNG 在线压缩服务
+
+使用 TinyPNG 的在线压缩服务，获得业界领先的压缩效果：
+
+```typescript
+import { compress } from '@awesome-compressor/browser-compress-image'
+
+// 使用 TinyPNG 压缩（需要 API 密钥）
+const compressedBlob = await compress(file, {
+  quality: 0.8,
+  toolConfigs: [
+    {
+      name: 'tinypng',
+      key: 'your-tinypng-api-key', // 从 https://tinypng.com/developers 获取
+      enabled: true
+    }
+  ]
+})
+
+// TinyPNG 支持尺寸调整
+const resizedAndCompressed = await compress(file, {
+  mode: 'keepQuality',
+  targetWidth: 800,
+  targetHeight: 600,
+  toolConfigs: [
+    {
+      name: 'tinypng',
+      key: 'your-api-key',
+      enabled: true
+    }
+  ]
+})
+```
+
+**TinyPNG 特色功能：**
+- 🎯 **智能压缩** - AI 算法优化，保持最佳视觉质量
+- 📐 **尺寸调整** - 在压缩的同时调整图片尺寸
+- 🌍 **格式支持** - JPEG、PNG、WebP 全覆盖
+- 💾 **缓存优化** - 自动缓存相同文件的压缩结果，节省 API 配额
+- 🆓 **免费额度** - 每月 500 次免费压缩
+
+#### 缓存管理
+
+TinyPNG 压缩结果会自动缓存，避免重复 API 调用：
+
+```typescript
+import { 
+  clearTinyPngCache, 
+  getTinyPngCacheInfo,
+  configureTinyPngCache 
+} from '@awesome-compressor/browser-compress-image'
+
+// 查看缓存状态
+const cacheInfo = getTinyPngCacheInfo()
+console.log(`缓存使用率: ${cacheInfo.usageRate.toFixed(1)}%`)
+console.log(`已缓存文件: ${cacheInfo.totalEntries}/${cacheInfo.maxSize}`)
+
+// 配置缓存大小（默认 50 个文件）
+configureTinyPngCache(100) // 增加到 100 个文件
+
+// 清空缓存
+clearTinyPngCache()
 ```
 
 ### 🎯 多工具压缩 - 自动选择最优结果
@@ -304,12 +374,13 @@ interface CompressionStats {
 
 #### 🛠️ 支持的压缩工具
 
-| 工具                      | 标识符                        | 适用格式  | EXIF支持 | 特点                     |
-| ------------------------- | ----------------------------- | --------- | -------- | ------------------------ |
-| Browser Image Compression | `'browser-image-compression'` | JPEG, PNG | ✅       | 快速压缩，兼容性好       |
-| CompressorJS              | `'compressorjs'`              | JPEG, PNG | ⚠️       | 轻量级，配置灵活         |
-| Canvas                    | `'canvas'`                    | 所有格式  | ❌       | 原生浏览器 API，通用性强 |
-| Gifsicle                  | `'gifsicle'`                  | GIF       | N/A      | GIF 专用压缩引擎         |
+| 工具                      | 标识符                        | 适用格式    | EXIF支持 | 特点                       |
+| ------------------------- | ----------------------------- | ----------- | -------- | -------------------------- |
+| Browser Image Compression | `'browser-image-compression'` | JPEG, PNG   | ✅       | 快速压缩，兼容性好         |
+| CompressorJS              | `'compressorjs'`              | JPEG, PNG   | ⚠️       | 轻量级，配置灵活           |
+| Canvas                    | `'canvas'`                    | 所有格式    | ❌       | 原生浏览器 API，通用性强   |
+| Gifsicle                  | `'gifsicle'`                  | GIF         | N/A      | GIF 专用压缩引擎           |
+| TinyPNG                   | `'tinypng'`                   | JPEG, PNG, WebP | ✅   | 在线压缩服务，效果卓越     |
 
 **EXIF 支持说明：**
 
@@ -326,6 +397,7 @@ interface CompressionStats {
 | ------------------------- | --------- | ---------------------- |
 | browser-image-compression | ✅        | 原生支持 EXIF 保留     |
 | CompressorJS              | ✅        | 支持 EXIF 保留         |
+| TinyPNG                   | ✅        | 支持 EXIF 保留         |
 | Canvas                    | ❌        | 不支持（会被自动过滤） |
 | gifsicle                  | ❌        | 不支持（会被自动过滤） |
 
@@ -354,9 +426,9 @@ try {
 
 #### 🖼️ 支持的图片格式
 
-- **JPEG** (.jpg, .jpeg) - 使用 browser-image-compression、CompressorJS、Canvas
-- **PNG** (.png) - 使用 browser-image-compression、CompressorJS、Canvas
-- **WebP** (.webp) - 使用 Canvas
+- **JPEG** (.jpg, .jpeg) - 使用 browser-image-compression、CompressorJS、Canvas、TinyPNG
+- **PNG** (.png) - 使用 browser-image-compression、CompressorJS、Canvas、TinyPNG
+- **WebP** (.webp) - 使用 Canvas、TinyPNG
 - **GIF** (.gif) - 使用 gifsicle-wasm-browser
 - **其他格式** - 使用 Canvas 和 CompressorJS 兜底
 
@@ -417,6 +489,31 @@ const optimizedFile = results.bestResult
 | `type`             | `CompressResultType` | `'blob'` | 输出格式类型                         |
 | `preserveExif`     | `boolean`            | `false`  | 是否保留 EXIF 信息（仅部分工具支持） |
 | `returnAllResults` | `boolean`            | `false`  | 是否返回所有工具的压缩结果           |
+| `toolConfigs`      | `ToolConfig[]`       | `[]`     | 工具配置数组，用于配置 API 密钥等    |
+
+#### 🔧 工具配置接口
+
+```typescript
+interface ToolConfig {
+  name: string      // 工具名称，如 'tinypng'
+  key: string       // API 密钥或配置参数
+  enabled: boolean  // 是否启用此工具
+}
+
+// 使用示例
+const toolConfigs: ToolConfig[] = [
+  {
+    name: 'tinypng',
+    key: 'your-tinypng-api-key',
+    enabled: true
+  }
+]
+
+const result = await compress(file, {
+  quality: 0.8,
+  toolConfigs
+})
+```
 
 #### 🎯 支持的输出格式
 
@@ -480,6 +577,10 @@ const buffer = await compress(file, 0.6, 'arrayBuffer') // 类型: ArrayBuffer
   - [browser-image-compression](https://github.com/Donaldcwl/browser-image-compression) - 浏览器图片压缩核心
   - [compressorjs](https://github.com/fengyuanchen/compressorjs) - 轻量级图片压缩库
   - [gifsicle-wasm-browser](https://github.com/renzhezhilu/gifsicle-wasm-browser) - GIF 专用压缩支持
+  - [TinyPNG API](https://tinypng.com/developers) - 在线智能压缩服务
+
+- **性能优化**
+  - 自主实现的 LRU 缓存算法 - 优化重复压缩请求，提升性能
 
 - **开发工具**
   - [Vue 3](https://vuejs.org/) - 渐进式 JavaScript 框架
