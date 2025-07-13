@@ -224,6 +224,7 @@ describe('新功能验证测试', () => {
           file: testFile,
           type: 'JPEG',
           expectedTools: [
+            'jsquash',
             'browser-image-compression',
             'compressorjs',
             'canvas',
@@ -232,12 +233,12 @@ describe('新功能验证测试', () => {
         {
           file: pngFile,
           type: 'PNG',
-          expectedTools: ['browser-image-compression', 'canvas'],
+          expectedTools: ['jsquash', 'browser-image-compression', 'canvas'],
         },
         {
           file: webpFile,
           type: 'WebP',
-          expectedTools: ['canvas', 'browser-image-compression'],
+          expectedTools: ['jsquash', 'canvas', 'browser-image-compression'],
         },
       ]
 

@@ -12,7 +12,7 @@ import { compressWithMultipleTools } from '@awesome-compressor/browser-compress-
 // 使用多种压缩工具并行处理，自动选择最优结果
 const result = await compressWithMultipleTools(file, {
   quality: 0.8,
-  tools: ['browser-image-compression', 'compressorjs', 'canvas'],
+  tools: ['jsquash', 'browser-image-compression', 'compressorjs', 'canvas'],
 })
 
 console.log('最优压缩工具:', result.bestTool)
@@ -68,10 +68,11 @@ console.log('压缩统计:', {
 
 ### 🎯 核心功能
 
-- **多格式支持** - JPEG、PNG、GIF、WebP 全覆盖
+- **多格式支持** - JPEG、PNG、GIF、WebP、AVIF、JPEG XL 全覆盖
 - **多输出类型** - Blob、File、Base64、ArrayBuffer 任你选择
-- **多工具引擎** - 集成 TinyPNG、CompressorJS、Canvas、browser-image-compression 等多种压缩算法
+- **多工具引擎** - 集成 JSQuash、TinyPNG、CompressorJS、Canvas、browser-image-compression 等多种压缩算法
 - **智能优选** - 自动比对多工具压缩结果，选择最优质量与体积的方案
+- **WASM 加速** - JSQuash 基于 WebAssembly 的高性能压缩，支持 AVIF、JPEG XL 等现代格式
 - **在线压缩** - 支持 TinyPNG 在线压缩服务，获得业界领先的压缩效果
 
 ### � 上传方式
@@ -95,19 +96,21 @@ console.log('压缩统计:', {
 
 ## 🏆 为什么选择我们？
 
-| 特性             | 我们 | 其他库 |
-| ---------------- | ---- | ------ |
-| 多输出格式       | ✅   | ❌     |
-| 多工具引擎比对   | ✅   | ❌     |
-| TinyPNG 在线压缩 | ✅   | ❌     |
-| 智能缓存机制     | ✅   | ❌     |
-| 工具配置管理     | ✅   | ❌     |
-| TypeScript 支持  | ✅   | 部分   |
-| GIF/WebP 压缩    | ✅   | 很少   |
-| 批量/粘贴上传    | ✅   | ❌     |
-| 文件夹上传       | ✅   | ❌     |
-| 零配置使用       | ✅   | ❌     |
-| 文档完善         | ✅   | 一般   |
+| 特性              | 我们 | 其他库 |
+| ----------------- | ---- | ------ |
+| 多输出格式        | ✅   | ❌     |
+| 多工具引擎比对    | ✅   | ❌     |
+| JSQuash WASM 压缩 | ✅   | ❌     |
+| 现代格式支持      | ✅   | ❌     |
+| TinyPNG 在线压缩  | ✅   | ❌     |
+| 智能缓存机制      | ✅   | ❌     |
+| 工具配置管理      | ✅   | ❌     |
+| TypeScript 支持   | ✅   | 部分   |
+| GIF/WebP 压缩     | ✅   | 很少   |
+| 批量/粘贴上传     | ✅   | ❌     |
+| 文件夹上传        | ✅   | ❌     |
+| 零配置使用        | ✅   | ❌     |
+| 文档完善          | ✅   | 一般   |
 
 ## 📦 安装
 
@@ -137,6 +140,74 @@ console.log('压缩完成！', compressedBlob)
 const compressedWithExif = await compress(file, {
   quality: 0.8,
   preserveExif: true,
+})
+```
+
+### ⚡ JSQuash WASM 压缩引擎
+
+JSQuash 是基于 WebAssembly 的高性能图片压缩引擎，支持最新的图片格式：
+
+```typescript
+import { compress } from '@awesome-compressor/browser-compress-image'
+
+// JSQuash 会自动在需要时加载，支持所有现代格式
+const compressedBlob = await compress(file, {
+  quality: 0.8,
+  // JSQuash 会自动选择作为首选工具（如果支持该格式）
+})
+
+// 检查 JSQuash 可用性和支持的格式
+import {
+  diagnoseJsquashAvailability,
+  configureWasmLoading,
+} from '@awesome-compressor/browser-compress-image'
+
+const diagnosis = await diagnoseJsquashAvailability()
+console.log('WASM 支持:', diagnosis.wasmSupported)
+console.log('可用格式:', diagnosis.availableFormats)
+console.log('错误信息:', diagnosis.errors)
+```
+
+**JSQuash 特色功能：**
+
+- 🚀 **WASM 加速** - 基于 WebAssembly 的原生性能
+- 🎨 **现代格式** - 支持 AVIF、JPEG XL、WebP 等最新格式
+- 📦 **零配置** - 自动从 CDN 加载 WASM 模块
+- 🔄 **智能回退** - WASM 加载失败时自动使用其他工具
+- 💾 **本地缓存** - 支持本地 WASM 文件缓存
+
+#### 格式支持矩阵
+
+| 格式    | JSQuash | 其他工具 | 优势                     |
+| ------- | ------- | -------- | ------------------------ |
+| JPEG    | ✅      | ✅       | 更好的质量/体积比        |
+| PNG     | ✅      | ✅       | 更快的处理速度           |
+| WebP    | ✅      | 部分     | 原生支持，更好压缩效果   |
+| AVIF    | ✅      | ❌       | 独家支持，最佳现代格式   |
+| JPEG XL | ✅      | ❌       | 独家支持，次世代压缩标准 |
+
+#### 高级配置
+
+```typescript
+import {
+  configureWasmLoading,
+  downloadWasmFiles,
+} from '@awesome-compressor/browser-compress-image'
+
+// 配置本地 WASM 文件加载
+configureWasmLoading({
+  useLocal: true,
+  baseUrl: '/assets/wasm/', // 本地 WASM 文件路径
+})
+
+// 下载 WASM 文件到本地（用于离线使用）
+const results = await downloadWasmFiles(['avif', 'webp', 'jxl'])
+results.forEach((result) => {
+  if (result.success) {
+    console.log(`✅ ${result.format} WASM 文件下载成功`)
+  } else {
+    console.error(`❌ ${result.format} 下载失败: ${result.error}`)
+  }
 })
 ```
 
@@ -375,13 +446,14 @@ interface CompressionStats {
 
 #### 🛠️ 支持的压缩工具
 
-| 工具                      | 标识符                        | 适用格式        | EXIF支持 | 特点                     |
-| ------------------------- | ----------------------------- | --------------- | -------- | ------------------------ |
-| Browser Image Compression | `'browser-image-compression'` | JPEG, PNG       | ✅       | 快速压缩，兼容性好       |
-| CompressorJS              | `'compressorjs'`              | JPEG, PNG       | ⚠️       | 轻量级，配置灵活         |
-| Canvas                    | `'canvas'`                    | 所有格式        | ❌       | 原生浏览器 API，通用性强 |
-| Gifsicle                  | `'gifsicle'`                  | GIF             | N/A      | GIF 专用压缩引擎         |
-| TinyPNG                   | `'tinypng'`                   | JPEG, PNG, WebP | ✅       | 在线压缩服务，效果卓越   |
+| 工具                      | 标识符                        | 适用格式                   | EXIF支持 | 特点                     |
+| ------------------------- | ----------------------------- | -------------------------- | -------- | ------------------------ |
+| JSQuash                   | `'jsquash'`                   | JPEG, PNG, WebP, AVIF, JXL | ❌       | WASM 加速，现代格式支持  |
+| Browser Image Compression | `'browser-image-compression'` | JPEG, PNG                  | ✅       | 快速压缩，兼容性好       |
+| CompressorJS              | `'compressorjs'`              | JPEG, PNG                  | ⚠️       | 轻量级，配置灵活         |
+| Canvas                    | `'canvas'`                    | 所有格式                   | ❌       | 原生浏览器 API，通用性强 |
+| Gifsicle                  | `'gifsicle'`                  | GIF                        | N/A      | GIF 专用压缩引擎         |
+| TinyPNG                   | `'tinypng'`                   | JPEG, PNG, WebP            | ✅       | 在线压缩服务，效果卓越   |
 
 **EXIF 支持说明：**
 
@@ -399,12 +471,13 @@ interface CompressionStats {
 | browser-image-compression | ✅        | 原生支持 EXIF 保留     |
 | CompressorJS              | ✅        | 支持 EXIF 保留         |
 | TinyPNG                   | ✅        | 支持 EXIF 保留         |
+| JSQuash                   | ❌        | 不支持（会被自动过滤） |
 | Canvas                    | ❌        | 不支持（会被自动过滤） |
 | gifsicle                  | ❌        | 不支持（会被自动过滤） |
 
 **智能过滤机制**：
 
-- 当 `preserveExif: true` 时，系统自动过滤掉 Canvas 和 gifsicle 工具
+- 当 `preserveExif: true` 时，系统自动过滤掉 JSQuash、Canvas 和 gifsicle 工具
 - 确保只使用支持 EXIF 保留的工具进行压缩
 - 如果没有可用的 EXIF 支持工具，会抛出错误提示用户调整参数
 
@@ -427,9 +500,11 @@ try {
 
 #### 🖼️ 支持的图片格式
 
-- **JPEG** (.jpg, .jpeg) - 使用 browser-image-compression、CompressorJS、Canvas、TinyPNG
-- **PNG** (.png) - 使用 browser-image-compression、CompressorJS、Canvas、TinyPNG
-- **WebP** (.webp) - 使用 Canvas、TinyPNG
+- **JPEG** (.jpg, .jpeg) - 使用 JSQuash、browser-image-compression、CompressorJS、Canvas、TinyPNG
+- **PNG** (.png) - 使用 JSQuash、browser-image-compression、CompressorJS、Canvas、TinyPNG
+- **WebP** (.webp) - 使用 JSQuash、Canvas、TinyPNG
+- **AVIF** (.avif) - 使用 JSQuash（独家支持）
+- **JPEG XL** (.jxl) - 使用 JSQuash（独家支持）
 - **GIF** (.gif) - 使用 gifsicle-wasm-browser
 - **其他格式** - 使用 Canvas 和 CompressorJS 兜底
 

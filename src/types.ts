@@ -1,5 +1,8 @@
 export type CompressResultType = 'blob' | 'file' | 'base64' | 'arrayBuffer'
 
+// JSQuash 支持的输出格式类型
+export type OutputType = 'avif' | 'jpeg' | 'jxl' | 'png' | 'webp'
+
 export type CompressResult<T extends CompressResultType> = T extends 'blob'
   ? Blob
   : T extends 'file'

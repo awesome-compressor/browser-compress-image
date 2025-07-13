@@ -465,7 +465,6 @@ function handleMouseDown(e: MouseEvent) {
 function handleMouseUp(e: MouseEvent) {
   // 鼠标松开时恢复显示
   isPCDragging.value = false
-  console.log('mouse up')
 }
 
 // 拖拽事件处理

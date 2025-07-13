@@ -10,6 +10,7 @@ import compressWithBrowserImageCompression from './tools/compressWithBrowserImag
 import compressWithCompressorJS from './tools/compressWithCompressorJS'
 import compressWithCanvas from './tools/compressWithCanvas'
 import compressWithGifsicle from './tools/compressWithGifsicle'
+import compressWithJsquash from './tools/compressWithJsquash' // 引入 JSQuash 压缩工具
 import convertBlobToType from './convertBlobToType'
 import { compressWithTinyPng } from './tools/compressWithTinyPng' // 引入 TinyPNG 压缩工具
 
@@ -38,9 +39,7 @@ type CompressorTool =
   | 'compressorjs'
   | 'gifsicle'
   | 'canvas'
-  | '@jsquash/webp'
-  | '@jsquash/png' // 添加 jsquash/png 工具
-  | '@jsquash/jpeg' // 添加 jsquash/jpeg 工具
+  | 'jsquash' // 添加 JSQuash 工具
   | 'original' // 添加原文件选项
   | 'tinypng' // 添加 TinyPNG 工具
 
@@ -71,11 +70,11 @@ interface CompressionAttempt {
 }
 
 const toolsCollections: Record<string, CompressorTool[]> = {
-  png: ['browser-image-compression', 'canvas'],
+  png: ['jsquash', 'browser-image-compression', 'canvas'],
   gif: ['gifsicle'],
-  webp: ['canvas', 'browser-image-compression'],
-  jpeg: ['compressorjs', 'canvas', 'browser-image-compression'],
-  others: ['browser-image-compression', 'compressorjs', 'canvas'],
+  webp: ['jsquash', 'canvas', 'browser-image-compression'],
+  jpeg: ['jsquash', 'compressorjs', 'canvas', 'browser-image-compression'],
+  others: ['jsquash', 'browser-image-compression', 'compressorjs', 'canvas'],
 }
 
 // 重载：支持新的选项对象参数 - 返回多结果
@@ -253,6 +252,9 @@ async function compressWithMultipleTools(
         case 'canvas':
           compressedBlob = await compressWithCanvas(file, toolOptions)
           break
+        case 'jsquash':
+          compressedBlob = await compressWithJsquash(file, toolOptions)
+          break
         case 'tinypng':
           compressedBlob = await compressWithTinyPng(file, toolOptions)
           break
@@ -414,6 +416,9 @@ async function compressWithMultipleToolsAndReturnAll<
           break
         case 'canvas':
           compressedBlob = await compressWithCanvas(file, toolOptions)
+          break
+        case 'jsquash':
+          compressedBlob = await compressWithJsquash(file, toolOptions)
           break
         case 'tinypng':
           compressedBlob = await compressWithTinyPng(file, toolOptions)
@@ -694,6 +699,9 @@ async function compressWithMultipleToolsWithStats(
           break
         case 'canvas':
           compressedBlob = await compressWithCanvas(file, toolOptions)
+          break
+        case 'jsquash':
+          compressedBlob = await compressWithJsquash(file, toolOptions)
           break
         case 'tinypng':
           compressedBlob = await compressWithTinyPng(file, toolOptions)
