@@ -25,7 +25,7 @@
   },
   "devDependencies": {
     "@types/node": "^17.0.45",
-    "@vitejs/plugin-vue": "^3.2.0",
+    "@vitejs/plugin-vue": "^6.0.0",
     "@vue/test-utils": "^2.4.6",
     "unplugin-auto-import": "^19.3.0",
     "unplugin-vue-components": "^28.8.0",

@@ -47,9 +47,10 @@ export function compressWithTinyPng(
       const apiKey = options.key
 
       if (!apiKey) {
-        throw new Error(
+        reject(
           'TinyPNG API key is required. Please set TINYPNG_API_KEY environment variable or window.TINYPNG_API_KEY',
         )
+        return
       }
 
       // 验证文件类型
@@ -60,9 +61,10 @@ export function compressWithTinyPng(
         'image/webp',
       ]
       if (!supportedTypes.includes(file.type)) {
-        throw new Error(
+        reject(
           `Unsupported file type: ${file.type}. TinyPNG supports JPEG, PNG, and WebP images.`,
         )
+        return
       }
 
       // 步骤1: 上传图片到 TinyPNG 进行压缩
@@ -77,15 +79,15 @@ export function compressWithTinyPng(
 
       if (!uploadResponse.ok) {
         const errorText = await uploadResponse.text()
-        throw new Error(
-          `TinyPNG upload failed: ${uploadResponse.status} - ${errorText}`,
-        )
+        reject(`TinyPNG upload failed: ${uploadResponse.status} - ${errorText}`)
+        return
       }
 
       const outputUrl = uploadResponse.headers.get('Location')
 
       if (!outputUrl) {
-        throw new Error('No output URL received from TinyPNG')
+        reject('No output URL received from TinyPNG')
+        return
       }
 
       // 如果需要调整尺寸，构建调整选项
@@ -133,9 +135,10 @@ export function compressWithTinyPng(
 
         if (!resizeResponse.ok) {
           const errorText = await resizeResponse.text()
-          throw new Error(
+          reject(
             `TinyPNG resize failed: ${resizeResponse.status} - ${errorText}`,
           )
+          return
         }
 
         finalUrl = resizeResponse.headers.get('Location') || outputUrl
@@ -149,9 +152,10 @@ export function compressWithTinyPng(
       })
 
       if (!downloadResponse.ok) {
-        throw new Error(
+        reject(
           `Failed to download compressed image: ${downloadResponse.status}`,
         )
+        return
       }
 
       const compressedBlob = await downloadResponse.blob()

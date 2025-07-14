@@ -570,6 +570,20 @@ async function handleDrop(e: DragEvent) {
 
 // 粘贴事件处理
 async function handlePaste(e: ClipboardEvent) {
+  // 检查当前焦点元素是否是输入框或可编辑元素
+  const activeElement = document.activeElement
+  if (
+    activeElement &&
+    (activeElement.tagName === 'INPUT' ||
+      activeElement.tagName === 'TEXTAREA' ||
+      (activeElement as HTMLElement).contentEditable === 'true' ||
+      activeElement.closest('.el-input__inner') ||
+      activeElement.closest('.el-textarea__inner'))
+  ) {
+    // 如果焦点在输入框中，不阻止默认粘贴行为
+    return
+  }
+
   e.preventDefault()
 
   const items = e.clipboardData?.items
@@ -828,7 +842,6 @@ async function compressImage(item: ImageItem): Promise<void> {
     const enabledToolConfigs = toolConfigs.value.filter(
       (config) => config.enabled && config.key.trim(),
     )
-
     const compressedBlob = await compress(item.file, {
       quality: item.quality, // 直接使用图片的质量设置（已经是0-1范围）
       type: 'blob',
