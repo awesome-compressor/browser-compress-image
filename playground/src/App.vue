@@ -123,15 +123,6 @@ const loadSettings = () => {
   globalQualityDragging.value = globalQuality.value
 }
 
-// 保存设置到 localStorage（静默保存，不显示提示）
-const saveSettingsSilent = () => {
-  try {
-    localStorage.setItem('toolConfigs', JSON.stringify(toolConfigs.value))
-  } catch (error) {
-    console.error('Failed to save settings:', error)
-  }
-}
-
 // 保存临时配置到实际配置并保存到 localStorage（显示成功提示）
 const saveSettings = () => {
   try {
@@ -1199,8 +1190,6 @@ function handleWheel(e: WheelEvent) {
 let isDragging = false
 let dragStartX = 0
 let dragStartY = 0
-let initialTransformX = 0
-let initialTransformY = 0
 
 function handleImageMouseDown(e: MouseEvent) {
   if (!isFullscreen.value) return
@@ -1213,8 +1202,6 @@ function handleImageMouseDown(e: MouseEvent) {
   isDragging = true
   dragStartX = e.clientX
   dragStartY = e.clientY
-  initialTransformX = imageTransform.value.x
-  initialTransformY = imageTransform.value.y
 
   // 阻止事件冒泡，避免触发比较滑块的拖拽
   e.preventDefault()

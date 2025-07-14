@@ -4,12 +4,11 @@
     "target": "es2016",
     "lib": ["DOM", "ESNext"],
     "baseUrl": ".",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "paths": {
       "~/*": ["src/*"]
     },
-    "resolveJsonModule": true,
     "types": ["vite/client", "vite-plugin-pages/client", "vitest/globals"],
     "strict": true,
     "strictNullChecks": true,

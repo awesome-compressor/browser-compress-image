@@ -80,7 +80,7 @@
     "eslint": "^9.31.0",
     "prettier": "^3.6.2",
     "tsdown": "^0.12.9",
-    "typescript": "^4.9.5",
+    "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   },
   "prettier": "@sxzz/prettier-config"

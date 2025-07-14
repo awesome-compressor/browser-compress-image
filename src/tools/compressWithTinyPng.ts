@@ -82,7 +82,6 @@ export function compressWithTinyPng(
         )
       }
 
-      const uploadResult = await uploadResponse.json()
       const outputUrl = uploadResponse.headers.get('Location')
 
       if (!outputUrl) {
