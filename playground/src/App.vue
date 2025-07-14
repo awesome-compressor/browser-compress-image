@@ -38,6 +38,8 @@ interface ImageItem {
   isCompressing: boolean
   compressionError?: string
   quality: number // 每张图片独立的质量设置
+  isQualityCustomized: boolean // 标记图片质量是否被用户单独修改过
+  qualityDragging: number // 拖动过程中的临时质量值
 }
 
 // 响应式状态
@@ -177,22 +179,52 @@ const handleGlobalQualitySliderChange = async (value: number) => {
   await handleGlobalQualityChange(newGlobalQuality)
 }
 
-// 修改全局质量变化处理函数 - 自动更新所有图片
+// 修改全局质量变化处理函数 - 只更新未被单独修改过的图片
 const handleGlobalQualityChange = async (newGlobalQuality: number) => {
   globalQuality.value = newGlobalQuality
   globalQualityDragging.value = newGlobalQuality // 同步拖动状态
 
-  // 更新所有图片质量为新的全局质量
-  const recompressPromises = imageItems.value.map(async (item) => {
-    item.quality = newGlobalQuality
-    // 如果图片没有在压缩中，自动重新压缩
-    if (!item.isCompressing) {
-      await compressImage(item)
-    }
-  })
+  // 只更新未被单独修改过的图片质量
+  const recompressPromises = imageItems.value
+    .filter((item) => !item.isQualityCustomized) // 只处理未被单独修改过的图片
+    .map(async (item) => {
+      item.quality = newGlobalQuality
+      item.qualityDragging = newGlobalQuality // 同步单个图片的拖动状态
+      // 如果图片没有在压缩中，自动重新压缩
+      if (!item.isCompressing) {
+        await compressImage(item)
+      }
+    })
 
   // 并行处理所有图片的重新压缩
   await Promise.all(recompressPromises)
+}
+
+// 单个图片质量拖动输入处理 - 只更新显示，不触发重压缩
+const handleImageQualityInput = (item: ImageItem, value: number) => {
+  item.qualityDragging = value / 100
+}
+
+// 单个图片质量拖动结束处理 - 触发重压缩
+const handleImageQualitySliderChange = async (
+  item: ImageItem,
+  value: number,
+) => {
+  const newQuality = value / 100
+  item.qualityDragging = newQuality
+  await handleImageQualityChange(item, value)
+}
+
+// 重置单个图片质量到全局质量
+const resetImageQualityToGlobal = async (item: ImageItem) => {
+  item.quality = globalQuality.value
+  item.qualityDragging = globalQuality.value
+  item.isQualityCustomized = false
+
+  // 如果图片没有在压缩中，自动重新压缩
+  if (!item.isCompressing) {
+    await compressImage(item)
+  }
 }
 
 // 单个图片质量变化处理
@@ -201,7 +233,17 @@ const handleImageQualityChange = async (
   newQualityPercent: number,
 ) => {
   // 更新质量值 (转换为0-1范围)
-  item.quality = newQualityPercent / 100
+  const newQuality = newQualityPercent / 100
+  item.quality = newQuality
+  item.qualityDragging = newQuality // 同步拖动状态
+
+  // 标记该图片质量已被单独修改
+  // 如果修改后的质量与全局质量一致，则取消自定义标记，重新允许全局控制
+  if (Math.abs(newQuality - globalQuality.value) < 0.01) {
+    item.isQualityCustomized = false
+  } else {
+    item.isQualityCustomized = true
+  }
 
   // 如果图片没有在压缩中，自动重新压缩
   if (!item.isCompressing) {
@@ -824,6 +866,8 @@ async function addNewImages(files: File[]) {
     originalSize: file.size,
     isCompressing: false,
     quality: globalQuality.value, // 使用全局质量作为默认值
+    isQualityCustomized: false, // 新图片默认未被单独修改过
+    qualityDragging: globalQuality.value, // 初始化拖动状态
   }))
   // 自动开始压缩所有新添加的图片
   await compressImages(newItems)
@@ -1471,14 +1515,27 @@ function handleImageMouseUp() {
               v-model="preserveExif"
               @change="handlePreserveExifChange"
             >
-              <span class="exif-label">Preserve EXIF</span>
+              <span class="exif-label"><span>Preserve</span> EXIF</span>
             </el-checkbox>
           </div>
 
           <div class="quality-control">
-            <span class="quality-label-small"
-              >Global Quality: {{ globalQualityPercent }}%</span
-            >
+            <div class="global-quality-header">
+              <div class="quality-info-global">
+                <span class="quality-label-global">Global Quality</span>
+                <span class="quality-value-global"
+                  >{{ globalQualityPercent }}%</span
+                >
+              </div>
+              <div class="quality-indicator">
+                <div class="quality-bar-bg">
+                  <div
+                    class="quality-bar-fill"
+                    :style="{ width: globalQualityPercent + '%' }"
+                  ></div>
+                </div>
+              </div>
+            </div>
             <el-slider
               :model-value="globalQualityPercent"
               @input="handleGlobalQualityInput"
@@ -1551,40 +1608,94 @@ function handleImageMouseUp() {
               </div>
             </div>
             <div class="image-info">
-              <div class="image-name">
-                {{ item.file.name }}
+              <div class="image-header">
+                <div class="image-name" :title="item.file.name">
+                  {{ item.file.name }}
+                </div>
+                <div class="image-format">
+                  {{ item.file.type.split('/')[1].toUpperCase() }}
+                </div>
               </div>
+
               <div class="image-stats">
-                <span class="original-size">{{
-                  formatFileSize(item.originalSize)
-                }}</span>
-                <span class="compressed-size">
-                  → {{ formatFileSize(item.compressedSize || 0) }}
-                </span>
-                <span
-                  class="ratio"
-                  :class="{
-                    'ratio-negative': (item.compressionRatio || 0) < 0,
-                  }"
-                >
-                  ({{ (item.compressionRatio || 0) < 0 ? '+' : '-'
-                  }}{{ Math.abs(item.compressionRatio || 0).toFixed(1) }}%)
-                </span>
+                <div class="compression-result">
+                  <div class="size-comparison">
+                    <div class="size-item">
+                      <span class="size-label">Original</span>
+                      <span class="size-value original">{{
+                        formatFileSize(item.originalSize)
+                      }}</span>
+                    </div>
+                    <div class="size-arrow">
+                      <svg width="12" height="8" viewBox="0 0 12 8" fill="none">
+                        <path
+                          d="M1 4H11M11 4L8 1M11 4L8 7"
+                          stroke="currentColor"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <div class="size-item">
+                      <span class="size-label">Compressed</span>
+                      <span class="size-value compressed">{{
+                        formatFileSize(item.compressedSize || 0)
+                      }}</span>
+                    </div>
+                  </div>
+                  <div class="compression-ratio">
+                    <span
+                      class="ratio-badge"
+                      :class="{
+                        'ratio-negative': (item.compressionRatio || 0) < 0,
+                      }"
+                    >
+                      {{ (item.compressionRatio || 0) < 0 ? '+' : '-'
+                      }}{{ Math.abs(item.compressionRatio || 0).toFixed(1) }}%
+                    </span>
+                  </div>
+                </div>
               </div>
+
               <!-- 独立的质量控制 -->
               <div class="image-quality-control">
-                <span class="quality-label-small"
-                  >Quality: {{ Math.round(item.quality * 100) }}%</span
-                >
+                <div class="quality-header">
+                  <div class="quality-info">
+                    <span class="quality-label">Quality</span>
+                    <span class="quality-value"
+                      >{{ Math.round(item.qualityDragging * 100) }}%</span
+                    >
+                  </div>
+                  <button
+                    v-if="item.isQualityCustomized"
+                    class="reset-quality-btn"
+                    title="Reset to global quality"
+                    @click.stop="resetImageQualityToGlobal(item)"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M2 6C2 3.79 3.79 2 6 2C7.5 2 8.78 2.88 9.41 4.12M10 6C10 8.21 8.21 10 6 10C4.5 10 3.22 9.12 2.59 7.88M9.5 3.5L9.41 4.12L8.79 4.03"
+                        stroke="currentColor"
+                        stroke-width="1.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
                 <el-slider
-                  :model-value="Math.round(item.quality * 100)"
+                  :model-value="Math.round(item.qualityDragging * 100)"
                   :max="100"
                   :step="1"
                   :min="1"
                   class="image-quality-slider"
                   :show-tooltip="false"
                   size="small"
-                  @change="(val: number) => handleImageQualityChange(item, val)"
+                  @input="(val: number) => handleImageQualityInput(item, val)"
+                  @change="
+                    (val: number) => handleImageQualitySliderChange(item, val)
+                  "
                 />
               </div>
             </div>
@@ -2589,22 +2700,136 @@ function handleImageMouseUp() {
 .quality-control {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   margin-left: 20px;
 }
 
-/* 全局质量滑块 - 与单个图片保持一致的样式 */
+.global-quality-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quality-info-global {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.quality-label-global {
+  font-size: 11px;
+  color: #4b5563;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.quality-value-global {
+  font-size: 13px;
+  color: #1f2937;
+  font-weight: 700;
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  min-width: 35px;
+  text-align: right;
+}
+
+.quality-indicator {
+  flex: 1;
+  max-width: 80px;
+}
+
+.quality-bar-bg {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.quality-bar-fill {
+  height: 100%;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+.quality-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* 全局质量滑块样式 */
 .global-quality-slider {
+  --el-slider-height: 8px;
+  --el-slider-button-size: 16px;
+  --el-slider-main-bg-color: linear-gradient(135deg, #4f46e5, #7c3aed);
+  --el-slider-runway-bg-color: rgba(0, 0, 0, 0.08);
   width: 100%;
 }
 
-.global-quality-slider .el-slider__runway {
-  height: 4px;
+.global-quality-slider :deep(.el-slider__runway) {
+  height: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.global-quality-slider .el-slider__button {
-  width: 12px;
-  height: 12px;
+.global-quality-slider :deep(.el-slider__bar) {
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+}
+
+.global-quality-slider :deep(.el-slider__button) {
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  border: 3px solid #ffffff;
+  box-shadow: 0 3px 12px rgba(79, 70, 229, 0.4);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 2;
+}
+
+.global-quality-slider :deep(.el-slider__button:hover) {
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
+  border-color: #ffffff;
+  box-shadow: 0 4px 16px rgba(79, 70, 229, 0.5);
+  transform: scale(1.2);
+}
+
+.global-quality-slider :deep(.el-slider__button:active) {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.6);
+}
+
+.global-quality-slider :deep(.el-slider) {
+  padding: 10px 0;
 }
 
 /* 单个图片质量控制 */
@@ -2614,20 +2839,13 @@ function handleImageMouseUp() {
   border-top: 1px solid #f3f4f6;
 }
 
-.quality-label-small {
-  font-size: 11px;
-  color: #6b7280;
-  font-weight: 500;
-  display: block;
+.quality-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 4px;
-}
-
-.image-quality-slider {
-  width: 100%;
-}
-
-.image-quality-slider .el-slider__runway {
-  height: 4px;
+  gap: 4px;
+  min-height: 14px;
 }
 
 .image-quality-slider .el-slider__button {
@@ -2778,7 +2996,7 @@ function handleImageMouseUp() {
 }
 
 /* 中等屏幕下隐藏下载按钮文字 - 仅PC端 */
-@media (max-width: 1110px) and (min-width: 769px) {
+@media (max-width: 1300px) and (min-width: 769px) {
   .download-btn-new .download-text {
     display: none;
   }
@@ -2791,7 +3009,7 @@ function handleImageMouseUp() {
 }
 
 /* 小屏幕下隐藏操作按钮文字 - 仅PC端 */
-@media (max-width: 980px) and (min-width: 769px) {
+@media (max-width: 1180px) and (min-width: 769px) {
   .add-btn .btn-text,
   .delete-btn .btn-text {
     display: none;
@@ -2803,9 +3021,15 @@ function handleImageMouseUp() {
     justify-content: center;
   }
 }
+/* 小屏幕下隐藏操作按钮文字 - 仅PC端 */
+@media (max-width: 1030px) and (min-width: 769px) {
+  .exif-label > span {
+    display: none;
+  }
+}
 
 /* 响应式设计 */
-@media (max-width: 768px) {
+@media (max-width: 950px) {
   .app-container {
     overflow-y: auto;
     overflow-x: hidden;
@@ -2888,8 +3112,8 @@ function handleImageMouseUp() {
   }
 
   .image-card {
-    flex: 0 0 120px;
-    width: 120px;
+    flex: 0 0 180px;
+    width: 180px;
   }
 
   .image-preview {
@@ -2955,11 +3179,6 @@ function handleImageMouseUp() {
   .image-quality-control {
     margin-top: 6px;
     padding-top: 6px;
-  }
-
-  .quality-label-small {
-    font-size: 10px;
-    margin-bottom: 2px;
   }
 
   .toolbar-divider {
@@ -3132,14 +3351,14 @@ img-comparison-slider img {
 /* 图片卡片 */
 .image-card {
   background: transparent;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
   transition: all 0.3s ease;
   border: 2px solid transparent;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  flex: 0 0 150px;
-  width: 150px;
+  flex: 0 0 180px;
+  width: 180px;
 }
 
 .image-card:hover {
@@ -3218,39 +3437,190 @@ img-comparison-slider img {
 
 /* 图片信息 */
 .image-info {
-  padding: 8px;
+  padding: 12px;
   background: white;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 图片头部信息 */
+.image-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .image-name {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  color: #374151;
-  margin-bottom: 4px;
+  color: #1f2937;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  line-height: 1.3;
 }
 
+.image-format {
+  font-size: 9px;
+  font-weight: 700;
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+/* 图片统计信息 */
 .image-stats {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+
+.compression-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.size-comparison {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.size-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 2px;
-  font-size: 10px;
+  flex: 1;
+}
+
+.size-label {
+  font-size: 9px;
+  color: #9ca3af;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.size-value {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+}
+
+.size-value.original {
   color: #6b7280;
-  margin-bottom: 6px;
+}
+
+.size-value.compressed {
+  color: #059669;
+}
+
+.size-arrow {
+  color: #d1d5db;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.compression-ratio {
+  display: flex;
+  justify-content: center;
+}
+
+.ratio-badge {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+  padding: 4px 8px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+  transition: all 0.2s ease;
+}
+
+.ratio-badge.ratio-negative {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
 }
 
 /* 图片质量控制 */
 .image-quality-control {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.quality-header {
+  display: flex;
   align-items: center;
-  text-align: center;
-  position: relative; /* 确保正确的层级关系 */
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.quality-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.quality-label {
+  font-size: 10px;
+  color: #6b7280;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.quality-value {
+  font-size: 11px;
+  color: #374151;
+  font-weight: 600;
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+}
+
+.reset-quality-btn {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #64748b;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.reset-quality-btn:hover {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: white;
+  transform: scale(1.05);
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+}
+
+.reset-quality-btn:active {
+  transform: scale(0.95);
 }
 
 /* 确保按钮包装器不会干扰点击 */
@@ -3264,80 +3634,51 @@ img-comparison-slider img {
   z-index: 3; /* 确保按钮在最上层 */
 }
 
-.quality-label-small {
-  font-size: 9px;
-  color: #6b7280;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  display: block;
-  margin-bottom: 4px;
-}
-
 .image-quality-slider {
   --el-slider-height: 6px;
-  --el-slider-button-size: 12px;
+  --el-slider-button-size: 14px;
   --el-slider-main-bg-color: linear-gradient(135deg, #4f46e5, #7c3aed);
-  --el-slider-runway-bg-color: rgba(0, 0, 0, 0.1);
+  --el-slider-runway-bg-color: rgba(0, 0, 0, 0.08);
   width: 100%;
-  max-width: 120px;
 }
 
 /* 确保滑轨可点击 */
 .image-quality-slider :deep(.el-slider__runway) {
-  height: 6px; /* 增加点击区域高度 */
+  height: 6px;
   cursor: pointer;
   position: relative;
   z-index: 1;
+  border-radius: 3px;
 }
 
 /* 确保整个滑动条容器都可交互 */
 .image-quality-slider :deep(.el-slider) {
   position: relative;
   z-index: 1;
-  padding: 8px 0; /* 增加上下padding，扩大点击区域 */
+  padding: 8px 0;
 }
 
 /* 自定义滑块按钮样式 */
 .image-quality-slider :deep(.el-slider__button) {
-  background: #4f46e5;
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
   border: 2px solid #ffffff;
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
   cursor: pointer;
   z-index: 2;
+  transition: all 0.2s ease;
 }
 
 .image-quality-slider :deep(.el-slider__button:hover) {
-  background: #6366f1;
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
   border-color: #ffffff;
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4);
-  transform: scale(1.1);
+  transform: scale(1.15);
 }
 
 /* 确保按钮包装器也有足够的点击区域 */
 .image-quality-slider :deep(.el-slider__button-wrapper) {
   cursor: pointer;
   z-index: 2;
-}
-
-.original-size {
-  font-weight: 500;
-}
-
-.compressed-size {
-  color: #059669;
-  font-weight: 500;
-}
-
-.ratio {
-  color: #16a34a;
-  font-weight: 700;
-  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
-  transition: color 0.2s ease;
-}
-
-.ratio.ratio-negative {
-  color: #dc2626;
 }
 
 /* 图片操作按钮 */
