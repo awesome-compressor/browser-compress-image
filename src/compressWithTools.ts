@@ -6,51 +6,7 @@ import type {
   CompressResultItem,
   ToolConfig,
 } from './types'
-import type { CompressorTool } from './compressWithTools'
 import convertBlobToType from './convertBlobToType'
-// 注意：这里不再直接导入所有工具，而是动态导入
-
-// 动态导入压缩工具的辅助函数
-async function getCompressorTool(tool: CompressorTool) {
-  switch (tool) {
-    case 'browser-image-compression': {
-      const { default: compressor } = await import(
-        './tools/compressWithBrowserImageCompression'
-      )
-      return compressor
-    }
-    case 'compressorjs': {
-      const { default: compressor } = await import(
-        './tools/compressWithCompressorJS'
-      )
-      return compressor
-    }
-    case 'gifsicle': {
-      const { default: compressor } = await import(
-        './tools/compressWithGifsicle'
-      )
-      return compressor
-    }
-    case 'canvas': {
-      const { default: compressor } = await import('./tools/compressWithCanvas')
-      return compressor
-    }
-    case 'jsquash': {
-      const { default: compressor } = await import(
-        './tools/compressWithJsquash'
-      )
-      return compressor
-    }
-    case 'tinypng': {
-      const { compressWithTinyPng } = await import(
-        './tools/compressWithTinyPng'
-      )
-      return compressWithTinyPng
-    }
-    default:
-      throw new Error(`Unknown compression tool: ${tool}`)
-  }
-}
 
 // 开发环境日志工具
 const devLog = {
@@ -70,6 +26,95 @@ const devLog = {
     }
   },
 }
+
+// 压缩工具类型定义
+export type CompressorTool =
+  | 'browser-image-compression'
+  | 'compressorjs'
+  | 'gifsicle'
+  | 'canvas'
+  | 'jsquash'
+  | 'original'
+  | 'tinypng'
+
+// 压缩工具函数类型
+export type CompressorFunction = (file: File, options: any) => Promise<Blob>
+
+// 工具注册表
+export class ToolRegistry {
+  private tools = new Map<CompressorTool, CompressorFunction>()
+  private toolsCollections: Record<string, CompressorTool[]> = {
+    png: [],
+    gif: [],
+    webp: [],
+    jpeg: [],
+    others: [],
+  }
+
+  // 注册压缩工具
+  registerTool(
+    name: CompressorTool,
+    func: CompressorFunction,
+    formats?: string[],
+  ): void {
+    this.tools.set(name, func)
+
+    // 如果指定了格式，将工具添加到对应格式的工具集合中
+    if (formats && formats.length > 0) {
+      formats.forEach((format) => {
+        if (this.toolsCollections[format]) {
+          if (!this.toolsCollections[format].includes(name)) {
+            this.toolsCollections[format].push(name)
+          }
+        }
+      })
+    } else {
+      // 如果没有指定格式，添加到所有格式（除了gif）
+      Object.keys(this.toolsCollections).forEach((format) => {
+        if (format !== 'gif' && !this.toolsCollections[format].includes(name)) {
+          this.toolsCollections[format].push(name)
+        }
+      })
+    }
+  }
+
+  // 获取压缩工具
+  getTool(name: CompressorTool): CompressorFunction | undefined {
+    return this.tools.get(name)
+  }
+
+  // 获取已注册的工具列表
+  getRegisteredTools(): CompressorTool[] {
+    return Array.from(this.tools.keys())
+  }
+
+  // 根据文件类型获取可用工具
+  getToolsForFileType(fileType: string): CompressorTool[] {
+    if (fileType.includes('png')) return [...this.toolsCollections.png]
+    if (fileType.includes('gif')) return [...this.toolsCollections.gif]
+    if (fileType.includes('webp')) return [...this.toolsCollections.webp]
+    if (fileType.includes('jpeg') || fileType.includes('jpg'))
+      return [...this.toolsCollections.jpeg]
+    return [...this.toolsCollections.others]
+  }
+
+  // 设置工具优先级（重新排序）
+  setToolPriority(fileType: string, tools: CompressorTool[]): void {
+    if (this.toolsCollections[fileType]) {
+      // 过滤出已注册的工具
+      const registeredTools = tools.filter((tool) => this.tools.has(tool))
+      this.toolsCollections[fileType] = registeredTools
+    }
+  }
+
+  // 检查工具是否已注册
+  isToolRegistered(name: CompressorTool): boolean {
+    return this.tools.has(name)
+  }
+}
+
+// 全局工具注册表实例
+export const globalToolRegistry = new ToolRegistry()
 
 // 支持 EXIF 保留的工具
 const EXIF_SUPPORTED_TOOLS: CompressorTool[] = [
@@ -94,57 +139,33 @@ interface CompressionAttempt {
   size: number
   success: boolean
   error?: string
-  duration: number // 压缩耗时（毫秒）
+  duration: number
 }
 
-const toolsCollections: Record<string, CompressorTool[]> = {
-  png: ['jsquash', 'browser-image-compression', 'canvas'],
-  gif: ['gifsicle'],
-  webp: ['jsquash', 'canvas', 'browser-image-compression'],
-  jpeg: ['jsquash', 'compressorjs', 'canvas', 'browser-image-compression'],
-  others: ['jsquash', 'browser-image-compression', 'compressorjs', 'canvas'],
+// 可配置的压缩函数选项
+export interface CompressWithToolsOptions extends CompressOptions {
+  type?: CompressResultType
+  returnAllResults?: boolean
+  toolRegistry?: ToolRegistry // 允许传入自定义的工具注册表
 }
 
-// 重载：支持新的选项对象参数 - 返回多结果
-export async function compress<T extends CompressResultType = 'blob'>(
+// 重载：返回多结果
+export async function compressWithTools<T extends CompressResultType = 'blob'>(
   file: File,
-  options: CompressOptions & { type?: T; returnAllResults: true },
+  options: CompressWithToolsOptions & { type?: T; returnAllResults: true },
 ): Promise<MultipleCompressResults<T>>
 
-// 重载：支持新的选项对象参数 - 返回单结果
-export async function compress<T extends CompressResultType = 'blob'>(
+// 重载：返回单结果
+export async function compressWithTools<T extends CompressResultType = 'blob'>(
   file: File,
-  options: CompressOptions & { type?: T; returnAllResults?: false },
-): Promise<CompressResult<T>>
-
-// 重载：支持旧的参数格式(向后兼容)
-export async function compress<T extends CompressResultType = 'blob'>(
-  file: File,
-  quality?: number,
-  type?: T,
+  options: CompressWithToolsOptions & { type?: T; returnAllResults?: false },
 ): Promise<CompressResult<T>>
 
 // 实现
-export async function compress<T extends CompressResultType = 'blob'>(
+export async function compressWithTools<T extends CompressResultType = 'blob'>(
   file: File,
-  qualityOrOptions?: number | (CompressOptions & { type?: T }),
-  type?: T,
+  options: CompressWithToolsOptions & { type?: T },
 ): Promise<CompressResult<T> | MultipleCompressResults<T>> {
-  // 解析参数
-  let options: CompressOptions & { type?: T }
-
-  if (typeof qualityOrOptions === 'object') {
-    // 新的选项对象格式
-    options = qualityOrOptions
-  } else {
-    // 旧的参数格式(向后兼容)
-    options = {
-      quality: qualityOrOptions || 0.6,
-      mode: 'keepSize',
-      type: type || ('blob' as T),
-    }
-  }
-
   // 设置默认值
   const {
     quality = 0.6,
@@ -157,6 +178,7 @@ export async function compress<T extends CompressResultType = 'blob'>(
     returnAllResults = false,
     type: resultType = 'blob' as T,
     toolConfigs = [],
+    toolRegistry = globalToolRegistry,
   } = options
 
   // 使用多工具压缩比对策略
@@ -172,15 +194,7 @@ export async function compress<T extends CompressResultType = 'blob'>(
   }
 
   // 根据文件类型选择合适的压缩工具组合
-  let tools = file.type.includes('png')
-    ? toolsCollections['png']
-    : file.type.includes('gif')
-      ? toolsCollections['gif']
-      : file.type.includes('webp')
-        ? toolsCollections['webp']
-        : file.type.includes('jpeg') || file.type.includes('jpg')
-          ? toolsCollections['jpeg']
-          : toolsCollections['others']
+  let tools = toolRegistry.getToolsForFileType(file.type)
 
   // 如果在 toolConfigs 中配置了 TinyPNG，则添加到工具列表中
   const hasTinyPngConfig = toolConfigs.some(
@@ -188,9 +202,21 @@ export async function compress<T extends CompressResultType = 'blob'>(
   )
   if (
     hasTinyPngConfig &&
+    toolRegistry.isToolRegistered('tinypng') &&
     ['png', 'webp', 'jpeg', 'jpg'].some((type) => file.type.includes(type))
   ) {
-    tools = [...tools, 'tinypng']
+    if (!tools.includes('tinypng')) {
+      tools = [...tools, 'tinypng']
+    }
+  }
+
+  // 过滤掉未注册的工具
+  tools = tools.filter((tool) => toolRegistry.isToolRegistered(tool))
+
+  if (tools.length === 0) {
+    throw new Error(
+      'No compression tools available. Please register at least one compression tool.',
+    )
   }
 
   // 如果需要返回所有结果
@@ -200,6 +226,7 @@ export async function compress<T extends CompressResultType = 'blob'>(
       compressionOptions,
       tools,
       resultType,
+      toolRegistry,
     )
   }
 
@@ -208,6 +235,7 @@ export async function compress<T extends CompressResultType = 'blob'>(
     file,
     compressionOptions,
     tools,
+    toolRegistry,
   )
 
   return convertBlobToType(bestResult, resultType, file.name)
@@ -227,6 +255,7 @@ async function compressWithMultipleTools(
     toolConfigs?: ToolConfig[]
   },
   tools: CompressorTool[],
+  toolRegistry: ToolRegistry,
 ): Promise<Blob> {
   const totalStartTime = performance.now()
 
@@ -242,12 +271,16 @@ async function compressWithMultipleTools(
   }
 
   const attempts: CompressionAttempt[] = []
+
   // 并行运行所有压缩工具
   const promises = tools.map(async (tool) => {
     const startTime = performance.now()
 
     try {
-      let compressedBlob: Blob
+      const compressorFunction = toolRegistry.getTool(tool)
+      if (!compressorFunction) {
+        throw new Error(`Tool ${tool} not registered`)
+      }
 
       // 查找工具对应的配置
       const toolConfig = findToolConfig(tool, options.toolConfigs || [])
@@ -264,9 +297,7 @@ async function compressWithMultipleTools(
         ...toolConfig, // 合并工具特定配置
       }
 
-      // 使用动态导入获取压缩工具
-      const compressorFunction = await getCompressorTool(tool)
-      compressedBlob = await compressorFunction(file, toolOptions)
+      const compressedBlob = await compressorFunction(file, toolOptions)
 
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
@@ -293,7 +324,7 @@ async function compressWithMultipleTools(
     }
   })
 
-  // 等待所有压缩尝试完成（使用 allSettled 确保即使某些工具失败也能获得其他结果）
+  // 等待所有压缩尝试完成
   const results = await Promise.allSettled(promises)
 
   // 处理结果，包括成功和失败的情况
@@ -369,6 +400,7 @@ async function compressWithMultipleToolsAndReturnAll<
   },
   tools: CompressorTool[],
   resultType: T,
+  toolRegistry: ToolRegistry,
 ): Promise<MultipleCompressResults<T>> {
   const totalStartTime = performance.now()
 
@@ -390,7 +422,10 @@ async function compressWithMultipleToolsAndReturnAll<
     const startTime = performance.now()
 
     try {
-      let compressedBlob: Blob
+      const compressorFunction = toolRegistry.getTool(tool)
+      if (!compressorFunction) {
+        throw new Error(`Tool ${tool} not registered`)
+      }
 
       // 查找工具对应的配置
       const toolConfig = findToolConfig(tool, options.toolConfigs || [])
@@ -407,9 +442,7 @@ async function compressWithMultipleToolsAndReturnAll<
         ...toolConfig, // 合并工具特定配置
       }
 
-      // 使用动态导入获取压缩工具
-      const compressorFunction = await getCompressorTool(tool)
-      compressedBlob = await compressorFunction(file, toolOptions)
+      const compressedBlob = await compressorFunction(file, toolOptions)
 
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
@@ -476,7 +509,7 @@ async function compressWithMultipleToolsAndReturnAll<
     }),
   )
 
-  // 找到最佳结果（成功的结果中文件大小最小的）
+  // 找到最佳结果
   const successfulAttempts = attempts.filter((attempt) => attempt.success)
   let bestAttempt: CompressionAttempt
 
@@ -485,7 +518,6 @@ async function compressWithMultipleToolsAndReturnAll<
       current.size < best.size ? current : best,
     )
 
-    // 如果最佳压缩结果仍然比原文件大，且质量设置较高，使用原文件
     if (bestAttempt.size >= file.size * 0.98 && options.quality > 0.85) {
       bestAttempt = {
         tool: 'original',
@@ -496,7 +528,6 @@ async function compressWithMultipleToolsAndReturnAll<
       }
     }
   } else {
-    // 如果所有工具都失败，使用原文件
     bestAttempt = {
       tool: 'original',
       blob: file,
@@ -516,19 +547,6 @@ async function compressWithMultipleToolsAndReturnAll<
     `Best compression result: ${bestAttempt.tool} (${bestAttempt.size} bytes, ${(((file.size - bestAttempt.size) / file.size) * 100).toFixed(1)}% reduction) - Total time: ${totalDuration}ms`,
   )
 
-  // 输出所有工具的性能比较
-  if (successfulAttempts.length > 1) {
-    devLog.table(
-      successfulAttempts.map((attempt) => ({
-        Tool: attempt.tool,
-        'Size (bytes)': attempt.size,
-        'Reduction (%)': `${(((file.size - attempt.size) / file.size) * 100).toFixed(1)}%`,
-        'Duration (ms)': attempt.duration,
-        'Speed (MB/s)': `${(file.size / 1024 / 1024 / (attempt.duration / 1000)).toFixed(2)}`,
-      })),
-    )
-  }
-
   return {
     bestResult,
     bestTool: bestAttempt.tool,
@@ -536,208 +554,3 @@ async function compressWithMultipleToolsAndReturnAll<
     totalDuration,
   }
 }
-
-// 详细压缩统计信息接口
-export interface CompressionStats {
-  bestTool: string
-  compressedFile: Blob
-  originalSize: number
-  compressedSize: number
-  compressionRatio: number
-  totalDuration: number
-  toolsUsed: {
-    tool: string
-    size: number
-    duration: number
-    compressionRatio: number
-    success: boolean
-    error?: string
-  }[]
-}
-
-// 带详细统计信息的压缩函数
-export async function compressWithStats(
-  file: File,
-  qualityOrOptions?: number | CompressOptions,
-): Promise<CompressionStats> {
-  // 使用多工具压缩并返回详细统计
-  return await compressWithMultipleToolsWithStats(file, {
-    quality:
-      typeof qualityOrOptions === 'object'
-        ? qualityOrOptions.quality || 0.6
-        : qualityOrOptions || 0.6,
-    mode:
-      typeof qualityOrOptions === 'object'
-        ? qualityOrOptions.mode || 'keepSize'
-        : 'keepSize',
-    targetWidth:
-      typeof qualityOrOptions === 'object'
-        ? qualityOrOptions.targetWidth
-        : undefined,
-    targetHeight:
-      typeof qualityOrOptions === 'object'
-        ? qualityOrOptions.targetHeight
-        : undefined,
-    maxWidth:
-      typeof qualityOrOptions === 'object'
-        ? qualityOrOptions.maxWidth
-        : undefined,
-    maxHeight:
-      typeof qualityOrOptions === 'object'
-        ? qualityOrOptions.maxHeight
-        : undefined,
-    preserveExif:
-      typeof qualityOrOptions === 'object'
-        ? qualityOrOptions.preserveExif || false
-        : false,
-    toolConfigs:
-      typeof qualityOrOptions === 'object'
-        ? qualityOrOptions.toolConfigs || []
-        : [],
-  })
-}
-
-// 带统计信息的多工具压缩函数
-async function compressWithMultipleToolsWithStats(
-  file: File,
-  options: {
-    quality: number
-    mode: string
-    targetWidth?: number
-    targetHeight?: number
-    maxWidth?: number
-    maxHeight?: number
-    preserveExif?: boolean
-    toolConfigs?: ToolConfig[]
-  },
-): Promise<CompressionStats> {
-  const totalStartTime = performance.now()
-
-  // 根据文件类型选择工具
-  let tools = file.type.includes('png')
-    ? toolsCollections['png']
-    : file.type.includes('gif')
-      ? toolsCollections['gif']
-      : file.type.includes('webp')
-        ? toolsCollections['webp']
-        : toolsCollections['others']
-
-  // 如果在 toolConfigs 中配置了 TinyPNG，则添加到工具列表中
-  const hasTinyPngConfig = options.toolConfigs?.some(
-    (config) => config.name === 'tinypng',
-  )
-  if (
-    hasTinyPngConfig &&
-    ['png', 'webp', 'jpeg', 'jpg'].some((type) => file.type.includes(type))
-  ) {
-    tools = [...tools, 'tinypng']
-  }
-
-  // 当需要保留 EXIF 时，过滤掉不支持的工具
-  if (options.preserveExif) {
-    tools = tools.filter((tool) => EXIF_SUPPORTED_TOOLS.includes(tool))
-    if (tools.length === 0) {
-      throw new Error(
-        'No EXIF-supporting tools available for this file type. Please disable preserveExif or use a different file format.',
-      )
-    }
-    devLog.log('preserveExif=true, filtered tools:', tools)
-  }
-
-  const attempts: CompressionAttempt[] = []
-
-  // 并行运行所有压缩工具（复用现有逻辑）
-  const promises = tools.map(async (tool) => {
-    const startTime = performance.now()
-
-    try {
-      let compressedBlob: Blob
-
-      // 查找工具对应的配置
-      const toolConfig = findToolConfig(tool, options.toolConfigs || [])
-
-      // 构建传入压缩工具的选项，合并工具特定配置
-      const toolOptions = {
-        quality: options.quality,
-        mode: options.mode,
-        targetWidth: options.targetWidth,
-        targetHeight: options.targetHeight,
-        maxWidth: options.maxWidth,
-        maxHeight: options.maxHeight,
-        preserveExif: options.preserveExif,
-        ...toolConfig, // 合并工具特定配置
-      }
-
-      // 使用动态导入获取压缩工具
-      const compressorFunction = await getCompressorTool(tool)
-      compressedBlob = await compressorFunction(file, toolOptions)
-
-      const endTime = performance.now()
-      const duration = Math.round(endTime - startTime)
-
-      return {
-        tool,
-        blob: compressedBlob,
-        size: compressedBlob.size,
-        success: true,
-        duration,
-      } as CompressionAttempt
-    } catch (error) {
-      const endTime = performance.now()
-      const duration = Math.round(endTime - startTime)
-
-      return {
-        tool,
-        blob: file,
-        size: file.size,
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        duration,
-      } as CompressionAttempt
-    }
-  })
-
-  const results = await Promise.allSettled(promises)
-
-  results.forEach((result) => {
-    if (result.status === 'fulfilled') {
-      attempts.push(result.value)
-    }
-  })
-
-  const successfulAttempts = attempts.filter((attempt) => attempt.success)
-  const bestAttempt =
-    successfulAttempts.length > 0
-      ? successfulAttempts.reduce((best, current) =>
-          current.size < best.size ? current : best,
-        )
-      : {
-          tool: 'none',
-          blob: file,
-          size: file.size,
-          success: false,
-          duration: 0,
-        }
-
-  const totalEndTime = performance.now()
-  const totalDuration = Math.round(totalEndTime - totalStartTime)
-
-  return {
-    bestTool: bestAttempt.tool,
-    compressedFile: bestAttempt.blob,
-    originalSize: file.size,
-    compressedSize: bestAttempt.size,
-    compressionRatio: ((file.size - bestAttempt.size) / file.size) * 100,
-    totalDuration,
-    toolsUsed: attempts.map((attempt) => ({
-      tool: attempt.tool,
-      size: attempt.size,
-      duration: attempt.duration,
-      compressionRatio: ((file.size - attempt.size) / file.size) * 100,
-      success: attempt.success,
-      error: attempt.error,
-    })),
-  }
-}
-
-export default compress
