@@ -32,9 +32,10 @@ export class CompressionWorkerManager {
   private workerPool: Worker[] = []
   private isWorkerSupported: boolean = false
   private workerScript: string | null = null
+  private initPromise: Promise<void> | null = null
 
   private constructor() {
-    this.initializeWorkerSupport()
+    this.initPromise = this.initializeWorkerSupport()
   }
 
   static getInstance(): CompressionWorkerManager {
@@ -60,7 +61,8 @@ export class CompressionWorkerManager {
 
       this.isWorkerSupported = true
       console.log('Compression workers initialized successfully')
-    } catch (error) {
+    }
+    catch (error) {
       console.warn('Worker support initialization failed:', error)
       this.isWorkerSupported = false
     }
@@ -200,11 +202,19 @@ console.log('Compression worker ready');
           type: 'init',
           data: {},
         })
-      } catch (error) {
+      }
+      catch (error) {
         URL.revokeObjectURL(workerUrl)
         reject(error)
       }
     })
+  }
+
+  // Wait for worker initialization to complete
+  async waitForInitialization(): Promise<void> {
+    if (this.initPromise) {
+      await this.initPromise
+    }
   }
 
   // Check if workers are supported and available
@@ -257,7 +267,8 @@ console.log('Compression worker ready');
               // Reconstruct blob from transferred data
               const blob = new Blob([data.buffer], { type: data.type })
               resolve(blob)
-            } else if (type === 'error') {
+            }
+            else if (type === 'error') {
               reject(new Error(data.message))
             }
           }
@@ -292,7 +303,8 @@ console.log('Compression worker ready');
             [buffer],
           )
         })
-      } catch (error) {
+      }
+      catch (error) {
         this.workerTasks.delete(taskId)
         reject(error)
       }
@@ -322,7 +334,7 @@ console.log('Compression worker ready');
 
   // Clean up resources
   destroy(): void {
-    this.workers.forEach((worker) => worker.terminate())
+    this.workers.forEach(worker => worker.terminate())
     this.workers = []
     this.workerTasks.clear()
   }

@@ -9,6 +9,7 @@ export {
   configureCompression,
   type EnhancedCompressOptions,
   getCompressionStats,
+  waitForCompressionInitialization,
 } from './compressEnhanced'
 
 // 新的可配置压缩系统
