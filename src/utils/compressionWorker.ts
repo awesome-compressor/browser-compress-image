@@ -61,8 +61,7 @@ export class CompressionWorkerManager {
 
       this.isWorkerSupported = true
       console.log('Compression workers initialized successfully')
-    }
-    catch (error) {
+    } catch (error) {
       console.warn('Worker support initialization failed:', error)
       this.isWorkerSupported = false
     }
@@ -202,8 +201,7 @@ console.log('Compression worker ready');
           type: 'init',
           data: {},
         })
-      }
-      catch (error) {
+      } catch (error) {
         URL.revokeObjectURL(workerUrl)
         reject(error)
       }
@@ -267,8 +265,7 @@ console.log('Compression worker ready');
               // Reconstruct blob from transferred data
               const blob = new Blob([data.buffer], { type: data.type })
               resolve(blob)
-            }
-            else if (type === 'error') {
+            } else if (type === 'error') {
               reject(new Error(data.message))
             }
           }
@@ -303,8 +300,7 @@ console.log('Compression worker ready');
             [buffer],
           )
         })
-      }
-      catch (error) {
+      } catch (error) {
         this.workerTasks.delete(taskId)
         reject(error)
       }
@@ -334,7 +330,7 @@ console.log('Compression worker ready');
 
   // Clean up resources
   destroy(): void {
-    this.workers.forEach(worker => worker.terminate())
+    this.workers.forEach((worker) => worker.terminate())
     this.workers = []
     this.workerTasks.clear()
   }
