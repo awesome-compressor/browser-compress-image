@@ -16,8 +16,8 @@ export default async function compressWithCanvas(
   // 注意：Canvas API 本身不支持 EXIF 保留，preserveExif 参数在此处被忽略
   // 如果需要保留 EXIF，建议使用其他压缩工具如 browser-image-compression
 
-  let finalWidth = targetWidth || maxWidth,
-    finalHeight = targetHeight || maxHeight
+  let finalWidth = targetWidth || maxWidth
+  let finalHeight = targetHeight || maxHeight
 
   if (!finalWidth && !finalHeight) {
     const { width, height } = await getImageDimensions(file)
