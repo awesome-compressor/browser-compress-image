@@ -24,7 +24,6 @@ import {
   compressEnhanced,
   compressEnhancedBatch,
   compressionQueue,
-  configureCompression,
   getCompressionStats,
   memoryManager,
   waitForCompressionInitialization,
@@ -418,6 +417,23 @@ const canAddToolConfig = computed(() => {
   return availableTools.some((tool) => !usedTools.includes(tool))
 })
 
+// 监听 loading 状态变化，控制页面滚动
+watch(
+  () => loading.value || isCompressingAll.value,
+  (isLoading) => {
+    if (isLoading) {
+      // 禁用页面滚动
+      document.body.style.overflow = 'hidden'
+      document.documentElement.style.overflow = 'hidden'
+    } else {
+      // 恢复页面滚动
+      document.body.style.overflow = ''
+      document.documentElement.style.overflow = ''
+    }
+  },
+  { immediate: true },
+)
+
 // 注册事件监听器
 onMounted(async () => {
   console.log('Image compression playground mounted')
@@ -458,6 +474,10 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  // 恢复页面滚动设置
+  document.body.style.overflow = ''
+  document.documentElement.style.overflow = ''
+
   // 清理事件监听器
   document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('dragover', handleDragOver)
@@ -2545,8 +2565,8 @@ function handleImageMouseUp() {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
+  width: 100vw;
+  height: 100vh;
   background: linear-gradient(
     135deg,
     rgba(102, 126, 234, 0.95),
@@ -2556,7 +2576,27 @@ function handleImageMouseUp() {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 10000;
+  /* 确保覆盖层不受页面内容影响 */
+  box-sizing: border-box;
+  overflow: hidden;
+  /* 防止滚动和交互 */
+  touch-action: none;
+  -webkit-overflow-scrolling: touch;
+  /* 确保在最顶层，完全覆盖 */
+  pointer-events: auto;
+  /* 强制使用视口单位，不受内容影响 */
+  min-width: 100vw;
+  min-height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  /* 确保定位不受影响 */
+  margin: 0;
+  padding: 0;
+  border: none;
+  /* 防止任何变换影响 */
+  transform: none;
+  will-change: auto;
 }
 
 .loading-spinner {

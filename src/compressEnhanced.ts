@@ -58,7 +58,7 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
 
   // For single file compression, use direct compression if queue is disabled
   if (!useQueue) {
-    return await compressDirectly(file, compressOptions, useWorker, type)
+    return (await compressDirectly(file, compressOptions, useWorker, type)) as CompressResult<T>
   }
 
   // Use queue for concurrency control
@@ -81,8 +81,9 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
 
   try {
     const blob = await Promise.race([compressPromise, timeoutPromise])
-    return await convertBlobToType(blob, type)
-  } catch (error) {
+    return (await convertBlobToType(blob, type)) as CompressResult<T>
+  }
+  catch (error) {
     throw error instanceof Error ? error : new Error('Compression failed')
   }
 }
@@ -99,10 +100,10 @@ async function compressDirectly<T extends CompressResultType>(
   let compressedBlob: Blob
 
   // Determine if we should use worker
-  const shouldUseWorker =
-    useWorker &&
-    compressionWorkerManager.isSupported() &&
-    canUseWorkerForFile(file, options)
+  const shouldUseWorker
+    = useWorker
+      && compressionWorkerManager.isSupported()
+      && canUseWorkerForFile(file, options)
 
   if (shouldUseWorker) {
     try {
@@ -112,7 +113,8 @@ async function compressDirectly<T extends CompressResultType>(
         options,
       )
       console.log('Used worker compression for', file.name)
-    } catch (error) {
+    }
+    catch (error) {
       console.warn(
         'Worker compression failed, falling back to main thread:',
         error,
@@ -120,7 +122,8 @@ async function compressDirectly<T extends CompressResultType>(
       // Fallback to main thread compression
       compressedBlob = await compressInMainThread(file, options)
     }
-  } else {
+  }
+  else {
     // Use main thread compression directly
     compressedBlob = await compressInMainThread(file, options)
   }
@@ -193,8 +196,8 @@ export async function compressEnhancedBatch(
       100 - Math.floor(file.size / (1024 * 1024)),
     )
     const indexPriority = Math.max(1, files.length - index)
-    const calculatedPriority =
-      options.priority || Math.floor((sizePriority + indexPriority) / 2)
+    const calculatedPriority
+      = options.priority || Math.floor((sizePriority + indexPriority) / 2)
 
     return compressEnhanced(file, {
       ...options,
@@ -210,7 +213,8 @@ export async function compressEnhancedBatch(
   return results.map((result, index) => {
     if (result.status === 'fulfilled') {
       return result.value
-    } else {
+    }
+    else {
       console.error(
         `Compression failed for file ${files[index].name}:`,
         result.reason,
