@@ -1568,20 +1568,6 @@ function handleKeydown(e: KeyboardEvent) {
         toggleFullscreen()
       }
       break
-    case 'ArrowLeft':
-      if (isFullscreen.value) {
-        e.preventDefault()
-        setCurrentImage(Math.max(0, currentImageIndex.value - 1))
-      }
-      break
-    case 'ArrowRight':
-      if (isFullscreen.value) {
-        e.preventDefault()
-        setCurrentImage(
-          Math.min(imageItems.value.length - 1, currentImageIndex.value + 1),
-        )
-      }
-      break
   }
 }
 
