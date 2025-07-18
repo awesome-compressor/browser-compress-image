@@ -1,27 +1,33 @@
 <script setup lang="ts">
 import {
+  Aim,
   CloseBold,
+  Delete,
   Download,
   FolderOpened,
+  FullScreen,
+  Key,
   Loading,
   Picture,
+  Plus,
+  Setting,
   Upload,
   ZoomIn,
   ZoomOut,
-  FullScreen,
-  Aim,
-  Setting,
-  Key,
-  Plus,
-  Delete,
 } from '@element-plus/icons-vue'
 import GitForkVue from '@simon_he/git-fork-vue'
 import { ElMessage } from 'element-plus'
-import 'img-comparison-slider/dist/styles.css'
 import JSZip from 'jszip'
 import { download } from 'lazy-js-utils'
 import { h } from 'vue'
-import { compress } from '../../src'
+import {
+  compressEnhanced,
+  compressionQueue,
+  getCompressionStats,
+  memoryManager,
+  waitForCompressionInitialization,
+} from '../../src'
+import 'img-comparison-slider/dist/styles.css'
 
 // 导入 img-comparison-slider
 import('img-comparison-slider')
@@ -42,6 +48,17 @@ interface ImageItem {
   qualityDragging: number // 拖动过程中的临时质量值
 }
 
+// 压缩统计信息接口
+interface CompressionStatsInfo {
+  queuePending: number
+  queueRunning: number
+  queueCompleted: number
+  memoryUsage: number
+  memoryAbsolute: number
+  isWorkerSupported: boolean
+  currentConcurrency: number
+}
+
 // 响应式状态
 const loading = ref(false)
 const downloading = ref(false)
@@ -51,6 +68,13 @@ const currentImageIndex = ref(0)
 const isCompressingAll = ref(false)
 const isMobileDragging = ref(false)
 const isPCDragging = ref(false) // PC端拖拽状态 // 移动端拖拽状态
+
+// 压缩进度状态
+const compressionProgress = ref({
+  current: 0,
+  total: 0,
+  isActive: false,
+})
 
 // 图片查看相关状态
 const imageZoom = ref(1) // 图片缩放比例
@@ -64,6 +88,17 @@ const globalQualityDragging = ref(0.6) // 拖动过程中的临时质量值
 
 // 设置面板相关状态
 const showSettingsPanel = ref(false)
+
+// 性能统计信息
+const compressionStats = ref<CompressionStatsInfo>({
+  queuePending: 0,
+  queueRunning: 0,
+  queueCompleted: 0,
+  memoryUsage: 0,
+  memoryAbsolute: 0,
+  isWorkerSupported: false,
+  currentConcurrency: 0,
+})
 
 // 工具配置接口
 interface ToolConfig {
@@ -82,24 +117,25 @@ const toolConfigs = ref<ToolConfig[]>([])
 const tempToolConfigs = ref<ToolConfig[]>([])
 
 // 打开设置面板时，复制当前配置到临时配置
-const openSettingsPanel = () => {
+function openSettingsPanel() {
   tempToolConfigs.value = JSON.parse(JSON.stringify(toolConfigs.value))
   showSettingsPanel.value = true
 }
 
 // 关闭设置面板时，不保存临时配置的更改
-const closeSettingsPanel = () => {
+function closeSettingsPanel() {
   showSettingsPanel.value = false
   // 不更新 toolConfigs，保持原有配置
 }
 
 // 从 localStorage 恢复设置
-const loadSettings = () => {
+function loadSettings() {
   try {
     const savedConfigs = localStorage.getItem('toolConfigs')
     if (savedConfigs) {
       toolConfigs.value = JSON.parse(savedConfigs)
-    } else {
+    }
+    else {
       // 默认配置
       toolConfigs.value = [
         {
@@ -109,7 +145,8 @@ const loadSettings = () => {
         },
       ]
     }
-  } catch (error) {
+  }
+  catch (error) {
     console.warn('Failed to load settings from localStorage:', error)
     // 使用默认配置
     toolConfigs.value = [
@@ -126,7 +163,7 @@ const loadSettings = () => {
 }
 
 // 保存临时配置到实际配置并保存到 localStorage（显示成功提示）
-const saveSettings = () => {
+function saveSettings() {
   try {
     // 将临时配置复制到实际配置
     toolConfigs.value = JSON.parse(JSON.stringify(tempToolConfigs.value))
@@ -135,18 +172,19 @@ const saveSettings = () => {
     ElMessage.success('Settings saved successfully!')
     // 关闭设置面板
     showSettingsPanel.value = false
-  } catch (error) {
+  }
+  catch (error) {
     console.error('Failed to save settings:', error)
     ElMessage.error('Failed to save settings')
   }
 }
 
 // 添加新的工具配置（操作临时配置）
-const addToolConfig = () => {
+function addToolConfig() {
   // 获取已使用的工具名称
-  const usedTools = tempToolConfigs.value.map((config) => config.name)
+  const usedTools = tempToolConfigs.value.map(config => config.name)
   // 找到第一个未使用的工具
-  const availableTool = availableTools.find((tool) => !usedTools.includes(tool))
+  const availableTool = availableTools.find(tool => !usedTools.includes(tool))
 
   if (availableTool) {
     tempToolConfigs.value.push({
@@ -158,7 +196,7 @@ const addToolConfig = () => {
 }
 
 // 删除工具配置（操作临时配置）
-const removeToolConfig = (index: number) => {
+function removeToolConfig(index: number) {
   tempToolConfigs.value.splice(index, 1)
 }
 
@@ -168,25 +206,28 @@ const globalQualityPercent = computed(() =>
 )
 
 // 全局质量拖动输入处理 - 只更新显示，不触发重压缩
-const handleGlobalQualityInput = (value: number) => {
+function handleGlobalQualityInput(value: number) {
   globalQualityDragging.value = value / 100
 }
 
 // 全局质量拖动结束处理 - 触发重压缩
-const handleGlobalQualitySliderChange = async (value: number) => {
+async function handleGlobalQualitySliderChange(value: number) {
   const newGlobalQuality = value / 100
   globalQualityDragging.value = newGlobalQuality
   await handleGlobalQualityChange(newGlobalQuality)
 }
 
+// 图片列表状态
+const imageItems = ref<ImageItem[]>([])
+
 // 修改全局质量变化处理函数 - 只更新未被单独修改过的图片
-const handleGlobalQualityChange = async (newGlobalQuality: number) => {
+async function handleGlobalQualityChange(newGlobalQuality: number) {
   globalQuality.value = newGlobalQuality
   globalQualityDragging.value = newGlobalQuality // 同步拖动状态
 
   // 只更新未被单独修改过的图片质量
   const recompressPromises = imageItems.value
-    .filter((item) => !item.isQualityCustomized) // 只处理未被单独修改过的图片
+    .filter(item => !item.isQualityCustomized) // 只处理未被单独修改过的图片
     .map(async (item) => {
       item.quality = newGlobalQuality
       item.qualityDragging = newGlobalQuality // 同步单个图片的拖动状态
@@ -201,22 +242,19 @@ const handleGlobalQualityChange = async (newGlobalQuality: number) => {
 }
 
 // 单个图片质量拖动输入处理 - 只更新显示，不触发重压缩
-const handleImageQualityInput = (item: ImageItem, value: number) => {
+function handleImageQualityInput(item: ImageItem, value: number) {
   item.qualityDragging = value / 100
 }
 
 // 单个图片质量拖动结束处理 - 触发重压缩
-const handleImageQualitySliderChange = async (
-  item: ImageItem,
-  value: number,
-) => {
+async function handleImageQualitySliderChange(item: ImageItem, value: number) {
   const newQuality = value / 100
   item.qualityDragging = newQuality
   await handleImageQualityChange(item, value)
 }
 
 // 重置单个图片质量到全局质量
-const resetImageQualityToGlobal = async (item: ImageItem) => {
+async function resetImageQualityToGlobal(item: ImageItem) {
   item.quality = globalQuality.value
   item.qualityDragging = globalQuality.value
   item.isQualityCustomized = false
@@ -228,10 +266,10 @@ const resetImageQualityToGlobal = async (item: ImageItem) => {
 }
 
 // 单个图片质量变化处理
-const handleImageQualityChange = async (
+async function handleImageQualityChange(
   item: ImageItem,
   newQualityPercent: number,
-) => {
+) {
   // 更新质量值 (转换为0-1范围)
   const newQuality = newQualityPercent / 100
   item.quality = newQuality
@@ -241,7 +279,8 @@ const handleImageQualityChange = async (
   // 如果修改后的质量与全局质量一致，则取消自定义标记，重新允许全局控制
   if (Math.abs(newQuality - globalQuality.value) < 0.01) {
     item.isQualityCustomized = false
-  } else {
+  }
+  else {
     item.isQualityCustomized = true
   }
 
@@ -251,8 +290,6 @@ const handleImageQualityChange = async (
   }
 }
 
-// 图片列表状态
-const imageItems = ref<ImageItem[]>([])
 const supportType = [
   'image/png',
   'image/jpg',
@@ -263,12 +300,12 @@ const supportType = [
 
 // 检查并过滤不支持的文件，显示提示信息
 function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
-  const imageFiles = files.filter((file) => file.type.startsWith('image/'))
-  const supportedFiles = imageFiles.filter((file) =>
+  const imageFiles = files.filter(file => file.type.startsWith('image/'))
+  const supportedFiles = imageFiles.filter(file =>
     supportType.includes(file.type),
   )
   const unsupportedFiles = imageFiles.filter(
-    (file) => !supportType.includes(file.type),
+    file => !supportType.includes(file.type),
   )
 
   // 如果有不支持的图片格式，显示详细提示
@@ -283,7 +320,7 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
     })
 
     const unsupportedFormats = [
-      ...new Set(unsupportedDetails.map((detail) => detail.extension)),
+      ...new Set(unsupportedDetails.map(detail => detail.extension)),
     ]
 
     ElMessage({
@@ -302,14 +339,14 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
           ? h(
               'div',
               { style: 'font-size: 12px; margin-bottom: 6px; opacity: 0.8' },
-              unsupportedFiles.map((f) => f.name).join(', '),
+              unsupportedFiles.map(f => f.name).join(', '),
             )
           : h(
               'div',
               { style: 'font-size: 12px; margin-bottom: 6px; opacity: 0.8' },
               `${unsupportedFiles
                 .slice(0, 2)
-                .map((f) => f.name)
+                .map(f => f.name)
                 .join(', ')} 等 ${unsupportedFiles.length} 个文件`,
             ),
         h(
@@ -327,7 +364,7 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
   }
 
   // 如果有非图片文件，也提示
-  const nonImageFiles = files.filter((file) => !file.type.startsWith('image/'))
+  const nonImageFiles = files.filter(file => !file.type.startsWith('image/'))
   if (nonImageFiles.length > 0) {
     ElMessage({
       message: h('div', [
@@ -336,14 +373,14 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
           ? h(
               'div',
               { style: 'font-size: 12px; margin-top: 4px; opacity: 0.8' },
-              nonImageFiles.map((f) => f.name).join(', '),
+              nonImageFiles.map(f => f.name).join(', '),
             )
           : h(
               'div',
               { style: 'font-size: 12px; margin-top: 4px; opacity: 0.8' },
               `${nonImageFiles
                 .slice(0, 2)
-                .map((f) => f.name)
+                .map(f => f.name)
                 .join(', ')} 等文件`,
             ),
       ]),
@@ -366,101 +403,211 @@ const totalCompressedSize = computed(() =>
 )
 
 const totalCompressionRatio = computed(() => {
-  if (totalOriginalSize.value === 0) return 0
+  if (totalOriginalSize.value === 0)
+    return 0
   return (
-    ((totalOriginalSize.value - totalCompressedSize.value) /
-      totalOriginalSize.value) *
-    100
+    ((totalOriginalSize.value - totalCompressedSize.value)
+      / totalOriginalSize.value)
+    * 100
   )
 })
 const compressedCount = computed(
   () =>
     imageItems.value.filter(
-      (item) => item.compressedUrl && !item.compressionError,
+      item => item.compressedUrl && !item.compressionError,
     ).length,
 )
 const allCompressed = computed(
   () =>
-    imageItems.value.length > 0 &&
-    compressedCount.value === imageItems.value.length,
+    imageItems.value.length > 0
+    && compressedCount.value === imageItems.value.length,
 )
 
 // 检查是否可以添加新的工具配置
 const canAddToolConfig = computed(() => {
   // 获取已使用的工具名称
-  const usedTools = tempToolConfigs.value.map((config) => config.name)
+  const usedTools = tempToolConfigs.value.map(config => config.name)
   // 检查是否还有未使用的工具
-  return availableTools.some((tool) => !usedTools.includes(tool))
+  return availableTools.some(tool => !usedTools.includes(tool))
 })
 
+// 监听 loading 状态变化，控制页面滚动
+watch(
+  () => loading.value || isCompressingAll.value,
+  (isLoading) => {
+    if (isLoading) {
+      // 禁用页面滚动
+      document.body.style.overflow = 'hidden'
+      document.documentElement.style.overflow = 'hidden'
+    }
+    else {
+      // 恢复页面滚动
+      document.body.style.overflow = ''
+      document.documentElement.style.overflow = ''
+    }
+  },
+  { immediate: true },
+)
+
 // 注册事件监听器
-onMounted(() => {
+onMounted(async () => {
+  console.log('Image compression playground mounted')
+
+  // 启动性能监控
+  startPerformanceMonitoring()
+
   // 加载保存的设置
   loadSettings()
-
-  fileRef.value!.addEventListener('change', handleFileInputChange)
-
-  // 添加全局拖拽事件监听
-  document.addEventListener('dragover', handleDragOver)
-  document.addEventListener('drop', handleDrop)
-  document.addEventListener('dragenter', handleDragEnter)
-  document.addEventListener('dragleave', handleDragLeave)
-
-  // 添加粘贴事件监听
-  document.addEventListener('paste', handlePaste)
-
-  // 添加移动端触摸事件监听
-  document.addEventListener('touchstart', handleTouchStart, { passive: true })
-  document.addEventListener('touchend', handleTouchEnd, { passive: true })
-  document.addEventListener('touchcancel', handleTouchEnd, { passive: true })
-
-  // 添加PC端鼠标事件监听
-  document.addEventListener('mousedown', handleMouseDown)
-  document.addEventListener('mouseup', handleMouseUp)
 
   // 添加键盘事件监听
   document.addEventListener('keydown', handleKeydown)
 
+  // 添加拖拽事件监听
+  document.addEventListener('dragover', handleDragOver)
+  document.addEventListener('drop', handleDrop)
+  document.addEventListener('dragenter', handleDragEnter)
+  document.addEventListener('dragleave', handleDragLeave)
+  // 添加移动端触摸事件监听
+  document.addEventListener('touchstart', handleTouchStart, { passive: true })
+  document.addEventListener('touchend', handleTouchEnd, { passive: true })
+  document.addEventListener('touchcancel', handleTouchEnd, { passive: true })
+  // 添加PC端鼠标事件监听
+  document.addEventListener('mousedown', handleMouseDown)
+  document.addEventListener('mouseup', handleMouseUp)
+  // 添加键盘事件监听
+  document.addEventListener('keydown', handleKeydown)
   // 添加鼠标事件监听（用于图片拖拽）
   document.addEventListener('mousemove', handleImageMouseMove)
   document.addEventListener('mouseup', handleImageMouseUp)
-
-  // 添加窗口大小变化监听
+  // 添加粘贴事件监听
+  document.addEventListener('paste', handlePaste)
   window.addEventListener('resize', handleWindowResize)
+  // 等待压缩系统初始化完成
+  try {
+    await waitForCompressionInitialization()
+    console.log('Compression system initialization completed')
+
+    // 初始化完成后检查设备性能并显示提示
+    checkDevicePerformance()
+  }
+  catch (error) {
+    console.warn('Compression system initialization failed:', error)
+    // 即使初始化失败也继续检查设备性能（可能是降级模式）
+    checkDevicePerformance()
+  }
+
+  console.log(
+    'Compression system initialized with enhanced performance features',
+  )
 })
 
-onUnmounted(() => {
+onBeforeUnmount(() => {
+  // 恢复页面滚动设置
+  document.body.style.overflow = ''
+  document.documentElement.style.overflow = ''
+
   // 清理事件监听器
+  document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('dragover', handleDragOver)
   document.removeEventListener('drop', handleDrop)
-  document.removeEventListener('dragenter', handleDragEnter)
   document.removeEventListener('dragleave', handleDragLeave)
   document.removeEventListener('paste', handlePaste)
 
-  // 清理移动端触摸事件监听器
-  document.removeEventListener('touchstart', handleTouchStart)
-  document.removeEventListener('touchend', handleTouchEnd)
-  document.removeEventListener('touchcancel', handleTouchEnd)
-
-  // 清理PC端鼠标事件监听器
-  document.removeEventListener('mousedown', handleMouseDown)
-  document.removeEventListener('mouseup', handleMouseUp)
-
-  // 清理图片查看相关事件监听
-  document.removeEventListener('keydown', handleKeydown)
-  document.removeEventListener('mousemove', handleImageMouseMove)
-  document.removeEventListener('mouseup', handleImageMouseUp)
-
-  // 清理窗口事件监听
-  window.removeEventListener('resize', handleWindowResize)
-
-  // 清理对象URL
+  // 清理所有对象URL
   imageItems.value.forEach((item) => {
-    URL.revokeObjectURL(item.originalUrl)
+    if (item.originalUrl) {
+      URL.revokeObjectURL(item.originalUrl)
+    }
     if (item.compressedUrl) {
       URL.revokeObjectURL(item.compressedUrl)
     }
   })
+
+  console.log('Image compression playground unmounted')
+})
+
+// 检查设备性能并显示相应提示
+function checkDevicePerformance() {
+  try {
+    const stats = getCompressionStats()
+
+    if (stats.worker.supported) {
+      console.log('✅ Web Workers supported - background compression enabled')
+    }
+    else {
+      console.log(
+        '⚠️  Web Workers not supported - using main thread compression',
+      )
+    }
+
+    // 显示设备适配信息
+    const isMobile
+      = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent,
+      )
+    const concurrency = stats.queue.maxConcurrency
+    console.log(
+      `${isMobile ? '📱 Mobile' : '🖥️  Desktop'} mode detected - Max ${concurrency} concurrent compressions${stats.worker.supported ? ' with Worker support' : ''}`,
+    )
+    // ElMessage({
+    //   message: `${isMobile ? '📱 Mobile' : '🖥️  Desktop'} mode detected - Max ${concurrency} concurrent compressions${stats.worker.supported ? ' with Worker support' : ''}`,
+    //   type: 'info',
+    //   duration: 3000,
+    // })
+  }
+  catch (error) {
+    console.warn('Failed to check device performance:', error)
+  }
+}
+
+// 清空压缩队列
+function clearQueue() {
+  try {
+    // 这里需要从库中导入clearCompressionQueue函数
+    // clearCompressionQueue()
+    compressionQueue.clearQueue()
+    ElMessage({
+      message: 'Compression queue cleared',
+      type: 'info',
+    })
+    updateCompressionStats()
+  }
+  catch (error) {
+    console.error('Failed to clear queue:', error)
+  }
+}
+
+// 格式化性能统计信息 - 重新设计以确保队列数字准确
+const performanceInfo = computed(() => {
+  const stats = compressionStats.value
+
+  // 计算实际的队列状态，基于本地图片状态验证
+  const actualRunning = imageItems.value.filter(
+    item => item.isCompressing,
+  ).length
+  const actualTotal = imageItems.value.length
+  const actualCompleted = imageItems.value.filter(
+    item =>
+      !item.isCompressing && item.compressedUrl && !item.compressionError,
+  ).length
+
+  // 使用本地状态作为主要数据源，stats作为备用
+  const queueRunning = actualRunning > 0 ? actualRunning : stats.queueRunning
+  const queuePending = Math.max(0, actualTotal - actualCompleted - queueRunning)
+
+  return {
+    queueStatus:
+      queueRunning > 0 || queuePending > 0
+        ? `${queueRunning}/${queuePending + queueRunning}`
+        : '',
+    memoryStatus:
+      stats.memoryUsage > 0 ? `${Math.round(stats.memoryUsage)}%` : '',
+    memoryAbsolute: stats.memoryAbsolute || 0, // 绝对内存值 (MB)
+    workerStatus: stats.isWorkerSupported ? 'Enabled' : 'Disabled',
+    hasActiveQueue: queueRunning > 0 || queuePending > 0,
+    actualRunning: queueRunning,
+    actualPending: queuePending,
+  }
 })
 
 // 移动端触摸事件处理
@@ -468,8 +615,8 @@ function handleTouchStart(e: TouchEvent) {
   // 检查触摸是否在图片比较滑块上
   const target = e.target as HTMLElement
   if (
-    target.closest('img-comparison-slider') ||
-    target.closest('.comparison-slider-fullscreen')
+    target.closest('img-comparison-slider')
+    || target.closest('.comparison-slider-fullscreen')
   ) {
     isMobileDragging.value = true
     console.log('touch start')
@@ -487,8 +634,8 @@ function handleMouseDown(e: MouseEvent) {
   // 检查鼠标按下是否在图片比较滑块上
   const target = e.target as HTMLElement
   if (
-    target.closest('img-comparison-slider') ||
-    target.closest('.comparison-slider-fullscreen')
+    target.closest('img-comparison-slider')
+    || target.closest('.comparison-slider-fullscreen')
   ) {
     isPCDragging.value = true
     console.log('mouse down on slider')
@@ -510,9 +657,9 @@ function handleDragEnter(e: DragEvent) {
   if (e.dataTransfer?.items) {
     // 检查是否包含图片文件或文件夹
     const hasImageOrFolder = Array.from(e.dataTransfer.items).some(
-      (item) =>
-        (item.kind === 'file' && item.type.startsWith('image/')) ||
-        (item.kind === 'file' && item.type === ''),
+      item =>
+        (item.kind === 'file' && item.type.startsWith('image/'))
+        || (item.kind === 'file' && item.type === ''),
     )
     if (hasImageOrFolder) {
       isDragOver.value = true
@@ -524,8 +671,8 @@ function handleDragLeave(e: DragEvent) {
   e.preventDefault()
   // 只有当离开整个应用区域时才设置为false
   if (
-    !e.relatedTarget ||
-    !document.querySelector('.app-container')?.contains(e.relatedTarget as Node)
+    !e.relatedTarget
+    || !document.querySelector('.app-container')?.contains(e.relatedTarget as Node)
   ) {
     isDragOver.value = false
   }
@@ -554,7 +701,7 @@ async function handleDrop(e: DragEvent) {
       console.log(
         'extractFilesFromDataTransfer 结果:',
         files.length,
-        files.map((f) => f.name),
+        files.map(f => f.name),
       )
     }
 
@@ -565,7 +712,7 @@ async function handleDrop(e: DragEvent) {
       console.log(
         '传统 API 结果:',
         files.length,
-        files.map((f) => f.name),
+        files.map(f => f.name),
       )
     }
 
@@ -582,7 +729,7 @@ async function handleDrop(e: DragEvent) {
     console.log(
       '过滤后的图片文件:',
       imageFiles.length,
-      imageFiles.map((f) => f.name),
+      imageFiles.map(f => f.name),
     )
 
     if (imageFiles.length === 0) {
@@ -595,17 +742,19 @@ async function handleDrop(e: DragEvent) {
 
     await addNewImages(imageFiles)
 
-    ElMessage({
-      message: `Successfully loaded ${imageFiles.length} image(s)`,
-      type: 'success',
-    })
-  } catch (error) {
+    // ElMessage({
+    //   message: `Successfully loaded ${imageFiles.length} image(s)`,
+    //   type: 'success',
+    // })
+  }
+  catch (error) {
     console.error('Error processing dropped files:', error)
     ElMessage({
       message: 'Error processing files. Please try again.',
       type: 'error',
     })
-  } finally {
+  }
+  finally {
     loading.value = false
   }
 }
@@ -615,12 +764,12 @@ async function handlePaste(e: ClipboardEvent) {
   // 检查当前焦点元素是否是输入框或可编辑元素
   const activeElement = document.activeElement
   if (
-    activeElement &&
-    (activeElement.tagName === 'INPUT' ||
-      activeElement.tagName === 'TEXTAREA' ||
-      (activeElement as HTMLElement).contentEditable === 'true' ||
-      activeElement.closest('.el-input__inner') ||
-      activeElement.closest('.el-textarea__inner'))
+    activeElement
+    && (activeElement.tagName === 'INPUT'
+      || activeElement.tagName === 'TEXTAREA'
+      || (activeElement as HTMLElement).contentEditable === 'true'
+      || activeElement.closest('.el-input__inner')
+      || activeElement.closest('.el-textarea__inner'))
   ) {
     // 如果焦点在输入框中，不阻止默认粘贴行为
     return
@@ -640,7 +789,7 @@ async function handlePaste(e: ClipboardEvent) {
   loading.value = true
 
   try {
-    let files: File[] = []
+    const files: File[] = []
 
     // 方法1: 首先尝试使用 webkitGetAsEntry API（支持文件夹）
     await Promise.all(
@@ -663,21 +812,24 @@ async function handlePaste(e: ClipboardEvent) {
             console.log(
               `Item ${i} processEntry 完成，文件数:`,
               itemFiles.length,
-              itemFiles.map((f) => f.name),
+              itemFiles.map(f => f.name),
             )
             files.push(...itemFiles)
-          } else {
+          }
+          else {
             // 回退到传统文件API
             console.log(`Item ${i} 回退到 getAsFile`)
             const file = item.getAsFile()
             if (file) {
               console.log(`剪贴板文件 ${i}:`, file.name, file.type, file.size)
               files.push(file)
-            } else {
+            }
+            else {
               console.log(`Item ${i} getAsFile 返回 null`)
             }
           }
-        } else {
+        }
+        else {
           console.log(`Item ${i} 不是文件类型, kind: ${item.kind}`)
         }
       }),
@@ -685,7 +837,7 @@ async function handlePaste(e: ClipboardEvent) {
 
     console.log(
       `总共收集到 ${files.length} 个文件:`,
-      files.map((f) => f.name),
+      files.map(f => f.name),
     )
 
     // 过滤图片文件
@@ -693,7 +845,7 @@ async function handlePaste(e: ClipboardEvent) {
     console.log(
       '剪贴板过滤后的图片文件:',
       imageFiles.length,
-      imageFiles.map((f) => f.name),
+      imageFiles.map(f => f.name),
     )
 
     if (imageFiles.length === 0) {
@@ -707,13 +859,15 @@ async function handlePaste(e: ClipboardEvent) {
       message: `Successfully pasted ${imageFiles.length} image(s)`,
       type: 'success',
     })
-  } catch (error) {
+  }
+  catch (error) {
     console.error('Error processing pasted files:', error)
     ElMessage({
       message: 'Error processing pasted files. Please try again.',
       type: 'error',
     })
-  } finally {
+  }
+  finally {
     loading.value = false
   }
 }
@@ -750,19 +904,21 @@ async function extractFilesFromItems(
             console.log(
               `Item ${i} processEntry 完成，文件数:`,
               itemFiles.length,
-              itemFiles.map((f) => f.name),
+              itemFiles.map(f => f.name),
             )
             return itemFiles
           }),
         )
-      } else {
+      }
+      else {
         // 回退到传统文件API - 当webkitGetAsEntry返回null时
         console.log(`Item ${i} 回退到 getAsFile`)
         const file = item.getAsFile()
         if (file) {
           console.log(`Item ${i} getAsFile 成功:`, file.name)
           promises.push(Promise.resolve([file]))
-        } else {
+        }
+        else {
           console.log(`Item ${i} getAsFile 失败`)
           promises.push(Promise.resolve([]))
         }
@@ -778,7 +934,7 @@ async function extractFilesFromItems(
     'extractFilesFromItems 完成，总共',
     files.length,
     '个文件:',
-    files.map((f) => f.name),
+    files.map(f => f.name),
   )
   return files
 }
@@ -806,10 +962,12 @@ async function processEntry(
       console.log('成功获取文件:', file.name, file.size, file.type)
       files.push(file)
       console.log('当前文件数组长度:', files.length)
-    } catch (error) {
+    }
+    catch (error) {
       console.error('获取文件失败:', fileEntry.name, error)
     }
-  } else if (entry.isDirectory) {
+  }
+  else if (entry.isDirectory) {
     console.log('处理目录:', entry.name)
     const dirEntry = entry as FileSystemDirectoryEntry
     const reader = dirEntry.createReader()
@@ -845,11 +1003,12 @@ async function handleFileInputChange() {
 
       await addNewImages(imageFiles)
 
-      ElMessage({
-        message: `Successfully loaded ${imageFiles.length} image(s)`,
-        type: 'success',
-      })
-    } finally {
+      // ElMessage({
+      //   message: `Successfully loaded ${imageFiles.length} image(s)`,
+      //   type: 'success',
+      // })
+    }
+    finally {
       loading.value = false
       // 清空文件输入框的值，确保可以重复选择同一文件
       fileRef.value.value = ''
@@ -857,26 +1016,133 @@ async function handleFileInputChange() {
   }
 }
 
-// 添加新图片到列表
+// 添加新图片到列表 - 优化版本使用增强批量压缩
 async function addNewImages(files: File[]) {
-  const newItems: ImageItem[] = files.map((file) => ({
+  if (!files || files.length === 0)
+    return
+
+  console.log(`Adding ${files.length} new images with enhanced compression`)
+
+  // 设置压缩进度
+  compressionProgress.value = {
+    current: 0,
+    total: files.length,
+    isActive: true,
+  }
+
+  // 创建图片项目
+  const newItems: ImageItem[] = files.map(file => ({
     id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     file,
     originalUrl: URL.createObjectURL(file),
     originalSize: file.size,
-    isCompressing: false,
-    quality: globalQuality.value, // 使用全局质量作为默认值
-    isQualityCustomized: false, // 新图片默认未被单独修改过
-    qualityDragging: globalQuality.value, // 初始化拖动状态
+    isCompressing: true, // 立即设置为压缩中
+    quality: globalQuality.value,
+    isQualityCustomized: false,
+    qualityDragging: globalQuality.value,
   }))
-  // 自动开始压缩所有新添加的图片
-  await compressImages(newItems)
+
+  // 先添加到列表中显示加载状态
   imageItems.value.push(...newItems)
+
+  try {
+    // 检查内存状态
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0)
+    if (!memoryManager.isTotalSizeAcceptable(totalSize)) {
+      ElMessage({
+        message:
+          'Total file size is too large. Consider processing fewer images at once.',
+        type: 'warning',
+      })
+    }
+
+    // 过滤出启用的工具配置
+    const enabledToolConfigs = toolConfigs.value.filter(
+      config => config.enabled && config.key.trim(),
+    )
+
+    // 计算动态超时时间，移动端增加5倍
+    const baseTimeout = Math.max(30000, files.length * 10000)
+    const deviceTimeout = getDeviceBasedTimeout(baseTimeout)
+
+    // 逐个压缩以实现实时进度更新
+    let successfulCount = 0
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const item = newItems[i]
+
+      try {
+        // 使用增强的单个压缩 - 自动队列管理和Worker支持
+        const result = await compressEnhanced(file, {
+          quality: globalQuality.value,
+          preserveExif: preserveExif.value,
+          toolConfigs: enabledToolConfigs,
+          useWorker: true,
+          useQueue: true,
+          timeout: deviceTimeout, // 使用设备适配的超时时间
+          type: 'blob',
+        })
+
+        // 更新单个图片的压缩结果
+        item.compressedUrl = URL.createObjectURL(result)
+        item.compressedSize = result.size
+        item.compressionRatio
+          = ((item.originalSize - result.size) / item.originalSize) * 100
+        item.isCompressing = false
+        successfulCount++
+
+        // 实时更新进度
+        compressionProgress.value.current = i + 1
+
+        console.log(`✅ Compressed ${i + 1}/${files.length}: ${file.name}`)
+      }
+      catch (error) {
+        console.error(`❌ Failed to compress ${file.name}:`, error)
+        item.isCompressing = false
+        item.compressionError
+          = error instanceof Error ? error.message : 'Compression failed'
+
+        // 即使失败也要更新进度
+        compressionProgress.value.current = i + 1
+      }
+    }
+
+    console.log(
+      `✅ Successfully compressed ${successfulCount}/${files.length} images using enhanced batch processing`,
+    )
+
+    // 显示成功消息
+    ElMessage({
+      message: `Successfully added and compressed ${successfulCount} image(s)`,
+      type: 'success',
+      duration: 2000,
+    })
+  }
+  catch (error) {
+    console.error('Enhanced batch compression failed:', error)
+
+    // 设置错误状态
+    newItems.forEach((item) => {
+      item.isCompressing = false
+      item.compressionError
+        = error instanceof Error ? error.message : 'Batch compression failed'
+    })
+
+    ElMessage({
+      message: `Failed to compress images: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      type: 'error',
+    })
+  }
+  finally {
+    // 重置进度状态
+    compressionProgress.value.isActive = false
+  }
 }
 
-// 压缩单个图片
+// 压缩单个图片 - 使用增强的压缩API
 async function compressImage(item: ImageItem): Promise<void> {
-  if (item.isCompressing) return
+  if (item.isCompressing)
+    return
 
   item.isCompressing = true
   item.compressionError = undefined
@@ -884,18 +1150,23 @@ async function compressImage(item: ImageItem): Promise<void> {
   try {
     // 过滤出启用的工具配置
     const enabledToolConfigs = toolConfigs.value.filter(
-      (config) => config.enabled && config.key.trim(),
+      config => config.enabled && config.key.trim(),
     )
-    const compressedBlob = await compress(item.file, {
+
+    // 使用增强的压缩函数，自动获得队列管理和Worker支持
+    const compressedBlob = await compressEnhanced(item.file, {
       quality: item.quality, // 直接使用图片的质量设置（已经是0-1范围）
-      type: 'blob',
       preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
       toolConfigs: enabledToolConfigs, // 传入工具配置
+      useWorker: true, // 启用Worker支持（如果可用）
+      useQueue: true, // 启用队列管理
+      timeout: getDeviceBasedTimeout(30000), // 设备适配的超时时间
+      type: 'blob', // 确保返回Blob类型
     })
 
     if (!compressedBlob) {
       ElMessage({
-        message: 'size is too large',
+        message: 'Compression failed: size is too large',
         type: 'error',
       })
       return
@@ -907,33 +1178,73 @@ async function compressImage(item: ImageItem): Promise<void> {
 
     item.compressedUrl = URL.createObjectURL(compressedBlob)
     item.compressedSize = compressedBlob.size
-    item.compressionRatio =
-      ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
+    item.compressionRatio
+      = ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
+  }
+  catch (error) {
+    console.error('Enhanced compression error:', error)
+    item.compressionError
+      = error instanceof Error ? error.message : 'Compression failed'
 
-    // 为当前图片优化渲染性能
-  } catch (error) {
-    console.error('Compression error:', error)
-    item.compressionError =
-      error instanceof Error ? error.message : 'Compression failed'
-  } finally {
+    // 显示具体错误信息
+    ElMessage({
+      message: `Compression failed for ${item.file.name}: ${item.compressionError}`,
+      type: 'error',
+    })
+  }
+  finally {
     item.isCompressing = false
   }
 }
 
-// 批量压缩图片
-async function compressImages(items: ImageItem[] = imageItems.value) {
-  isCompressingAll.value = true
-
+// 更新性能统计信息
+function updateCompressionStats() {
   try {
-    // 并发压缩，但限制并发数量避免性能问题
-    const batchSize = 3
-    for (let i = 0; i < items.length; i += batchSize) {
-      const batch = items.slice(i, i + batchSize)
-      await Promise.all(batch.map((item) => compressImage(item)))
+    const stats = getCompressionStats()
+    const memoryStats = memoryManager.getMemoryStats()
+
+    // 获取绝对内存使用量 (MB)
+    let memoryAbsolute = 0
+    if ((performance as any).memory) {
+      memoryAbsolute = Math.round(
+        (performance as any).memory.usedJSHeapSize / 1024 / 1024,
+      )
     }
-  } finally {
-    isCompressingAll.value = false
+
+    compressionStats.value = {
+      queuePending: stats.queue.pending,
+      queueRunning: stats.queue.running,
+      queueCompleted: stats.queue.completed,
+      memoryUsage: memoryStats.memoryUsagePercentage,
+      memoryAbsolute, // 绝对内存值 (MB)
+      isWorkerSupported: stats.worker.supported,
+      currentConcurrency: stats.queue.maxConcurrency,
+    }
   }
+  catch (error) {
+    console.warn('Failed to update compression stats:', error)
+  }
+}
+
+// 启动性能监控
+function startPerformanceMonitoring() {
+  // 每10秒更新一次统计信息
+  setInterval(updateCompressionStats, 10000)
+
+  // 单独的内存监控，每5秒更新一次，确保压缩时实时显示
+  setInterval(() => {
+    if ((performance as any).memory) {
+      const memoryAbsolute = Math.round(
+        (performance as any).memory.usedJSHeapSize / 1024 / 1024,
+      )
+      compressionStats.value.memoryAbsolute = memoryAbsolute
+    }
+  }, 5000)
+
+  // 初始更新
+  updateCompressionStats()
+
+  console.log('Performance monitoring started for image compression')
 }
 
 // 处理 EXIF 保留选项变化
@@ -962,17 +1273,52 @@ function deleteImage(index: number) {
   }
 }
 
-// 清空所有图片
+// 清空所有图片 - 增强版本包含队列清理和内存管理
 function clearAllImages() {
-  imageItems.value.forEach((item) => {
-    URL.revokeObjectURL(item.originalUrl)
-    if (item.compressedUrl) {
-      URL.revokeObjectURL(item.compressedUrl)
-    }
-  })
+  console.log('Clearing all images with enhanced cleanup')
 
-  imageItems.value = []
-  currentImageIndex.value = 0
+  try {
+    // 1. 清空压缩队列中的待处理任务
+    clearQueue()
+
+    // 2. 释放所有对象URL
+    imageItems.value.forEach((item) => {
+      if (item.originalUrl) {
+        URL.revokeObjectURL(item.originalUrl)
+      }
+      if (item.compressedUrl) {
+        URL.revokeObjectURL(item.compressedUrl)
+      }
+    })
+
+    // 3. 清空图片列表
+    imageItems.value = []
+    currentImageIndex.value = 0
+
+    // 4. 重置压缩状态
+    isCompressingAll.value = false
+
+    // 5. 执行内存清理
+    memoryManager.performCleanup()
+
+    // 6. 更新统计信息
+    updateCompressionStats()
+
+    console.log('✅ All images cleared successfully')
+
+    ElMessage({
+      message: 'All images cleared and memory optimized',
+      type: 'success',
+      duration: 2000,
+    })
+  }
+  catch (error) {
+    console.error('Error clearing images:', error)
+    ElMessage({
+      message: 'Error occurred while clearing images',
+      type: 'error',
+    })
+  }
 }
 
 // 上传图片
@@ -994,7 +1340,8 @@ function generateFolderName(): string {
 
 // 下载单个图片（保持原始文件名）
 async function downloadImage(item: ImageItem) {
-  if (!item.compressedUrl) return
+  if (!item.compressedUrl)
+    return
 
   try {
     const originalName = item.file.name
@@ -1005,7 +1352,8 @@ async function downloadImage(item: ImageItem) {
       type: 'success',
       duration: 2000,
     })
-  } catch (error) {
+  }
+  catch (error) {
     ElMessage({
       message: 'Download failed. Please try again.',
       type: 'error',
@@ -1015,10 +1363,11 @@ async function downloadImage(item: ImageItem) {
 
 // 批量下载所有图片（创建 ZIP 压缩包）
 async function downloadAllImages() {
-  if (downloading.value) return
+  if (downloading.value)
+    return
 
   const downloadableItems = imageItems.value.filter(
-    (item) => item.compressedUrl && !item.compressionError,
+    item => item.compressedUrl && !item.compressionError,
   )
   if (downloadableItems.length === 0) {
     ElMessage({
@@ -1043,7 +1392,7 @@ async function downloadAllImages() {
     }
 
     // 添加延迟显示加载状态
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await new Promise(resolve => setTimeout(resolve, 300))
 
     // 将所有压缩图片添加到 ZIP 中
     for (const item of downloadableItems) {
@@ -1082,22 +1431,25 @@ async function downloadAllImages() {
       type: 'success',
       duration: 4000,
     })
-  } catch (error) {
+  }
+  catch (error) {
     console.error('Batch download error:', error)
     ElMessage({
       message: 'Batch download failed. Please try again.',
       type: 'error',
     })
-  } finally {
+  }
+  finally {
     downloading.value = false
   }
 }
 
 // 格式化文件大小
 function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 Bytes'
+  if (bytes === 0)
+    return '0 B'
   const k = 1024
-  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return `${Number.parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`
 }
@@ -1113,7 +1465,8 @@ function setCurrentImage(index: number) {
       // 重新计算边界约束，确保当前位移在新图片的有效范围内
       constrainImagePosition()
     })
-  } else {
+  }
+  else {
     // 非全屏模式下切换图片时，重置缩放和位移
     resetImageTransform()
   }
@@ -1186,7 +1539,8 @@ function toggleFullscreen() {
 
 // 键盘事件处理
 function handleKeydown(e: KeyboardEvent) {
-  if (!hasImages.value) return
+  if (!hasImages.value)
+    return
 
   switch (e.key) {
     case 'Escape':
@@ -1214,31 +1568,19 @@ function handleKeydown(e: KeyboardEvent) {
         toggleFullscreen()
       }
       break
-    case 'ArrowLeft':
-      if (isFullscreen.value) {
-        e.preventDefault()
-        setCurrentImage(Math.max(0, currentImageIndex.value - 1))
-      }
-      break
-    case 'ArrowRight':
-      if (isFullscreen.value) {
-        e.preventDefault()
-        setCurrentImage(
-          Math.min(imageItems.value.length - 1, currentImageIndex.value + 1),
-        )
-      }
-      break
   }
 }
 
 // 鼠标滚轮缩放
 function handleWheel(e: WheelEvent) {
-  if (!isFullscreen.value) return
+  if (!isFullscreen.value)
+    return
 
   e.preventDefault()
   if (e.deltaY > 0) {
     zoomOut()
-  } else {
+  }
+  else {
     zoomIn()
   }
 }
@@ -1249,7 +1591,8 @@ let dragStartX = 0
 let dragStartY = 0
 
 function handleImageMouseDown(e: MouseEvent) {
-  if (!isFullscreen.value) return
+  if (!isFullscreen.value)
+    return
 
   // 如果图片没有放大，不处理拖拽
   if (imageZoom.value <= 1) {
@@ -1310,7 +1653,8 @@ function calculateImageBounds() {
     // 图片较宽，以容器宽度为准
     displayWidth = containerWidth
     displayHeight = containerWidth / imageAspect
-  } else {
+  }
+  else {
     // 图片较高，以容器高度为准
     displayHeight = containerHeight
     displayWidth = containerHeight * imageAspect
@@ -1347,7 +1691,8 @@ function calculateImageBounds() {
 }
 
 function handleImageMouseMove(e: MouseEvent) {
-  if (!isDragging) return
+  if (!isDragging)
+    return
 
   const newX = e.clientX - dragStartX
   const newY = e.clientY - dragStartY
@@ -1366,17 +1711,46 @@ function handleImageMouseMove(e: MouseEvent) {
 function handleImageMouseUp() {
   isDragging = false
 }
+
+// 检测是否为移动设备
+function isMobileDevice(): boolean {
+  return (
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent,
+    ) || window.innerWidth <= 768
+  )
+}
+
+// 获取基于设备的timeout时间
+function getDeviceBasedTimeout(baseTimeout: number): number {
+  return isMobileDevice() ? baseTimeout * 5 : baseTimeout
+}
 </script>
 
 <template>
   <div class="app-container" :class="{ 'drag-over': isDragOver }">
+    <!-- 左上角内存和状态显示 -->
+    <div class="fps-style-info">
+      <div
+        v-if="performanceInfo.memoryAbsolute > 0" class="memory-indicator"
+        :class="{ 'memory-high': compressionStats.memoryUsage > 80 }"
+      >
+        RAM: {{ performanceInfo.memoryAbsolute }}MB
+      </div>
+      <div v-if="compressionStats.isWorkerSupported" class="worker-indicator">
+        ⚡ Worker
+      </div>
+    </div>
+
     <!-- 拖拽覆盖层 -->
     <div v-show="isDragOver" class="drag-overlay">
       <div class="drag-message">
         <el-icon class="drag-icon">
           <FolderOpened />
         </el-icon>
-        <div class="drag-text">Drop images or folders here</div>
+        <div class="drag-text">
+          Drop images or folders here
+        </div>
         <div class="drag-subtitle">
           Support multiple images and folder drag & drop • Or use Ctrl+V to
           paste
@@ -1393,15 +1767,15 @@ function handleImageMouseUp() {
         <div class="loading-text">
           {{ loading ? 'Loading images...' : 'Compressing images...' }}
         </div>
+        <div v-if="compressionProgress.isActive && compressionProgress.total > 0" class="loading-progress">
+          {{ compressionProgress.current }}/{{ compressionProgress.total }}
+        </div>
       </div>
     </div>
 
     <GitForkVue
-      link="https://github.com/awesome-compressor/browser-compress-image"
-      position="right"
-      type="corners"
-      content="Star on GitHub"
-      color="#667eea"
+      link="https://github.com/awesome-compressor/browser-compress-image" position="right" type="corners"
+      content="Star on GitHub" color="#667eea"
     />
 
     <!-- Header -->
@@ -1420,13 +1794,7 @@ function handleImageMouseUp() {
       <!-- Settings Section - Always visible -->
       <section class="settings-section-main">
         <div class="settings-container">
-          <el-button
-            type="primary"
-            class="settings-btn-main"
-            @click="openSettingsPanel"
-            :icon="Setting"
-            plain
-          >
+          <el-button type="primary" class="settings-btn-main" :icon="Setting" plain @click="openSettingsPanel">
             Configure Compression Tools
           </el-button>
           <p class="settings-hint">
@@ -1454,19 +1822,15 @@ function handleImageMouseUp() {
       <div v-if="hasImages" class="floating-toolbar">
         <div class="toolbar-section files-section">
           <div class="files-info">
-            <div class="files-icon">📷</div>
+            <div class="files-icon">
+              📷
+            </div>
             <span class="files-count">{{ imageItems.length }} image(s)</span>
-            <span class="compressed-count"
-              >({{ compressedCount }} compressed)</span
-            >
+            <span class="compressed-count">({{ compressedCount }} compressed)</span>
           </div>
 
           <div class="action-buttons">
-            <button
-              class="action-btn add-btn"
-              title="Add More Images"
-              @click="uploadImages"
-            >
+            <button class="action-btn add-btn" title="Add More Images" @click="uploadImages">
               <div class="btn-icon">
                 <el-icon>
                   <Upload />
@@ -1474,11 +1838,7 @@ function handleImageMouseUp() {
               </div>
               <span class="btn-text">Add More</span>
             </button>
-            <button
-              class="action-btn delete-btn"
-              title="Clear All Images"
-              @click="clearAllImages"
-            >
+            <button class="action-btn delete-btn" title="Clear All Images" @click="clearAllImages">
               <div class="btn-icon">
                 <el-icon>
                   <CloseBold />
@@ -1493,28 +1853,40 @@ function handleImageMouseUp() {
 
         <div class="toolbar-section stats-section">
           <div class="stats-info">
-            <span class="size-label"
-              >Total: {{ formatFileSize(totalOriginalSize) }} →
-              {{ formatFileSize(totalCompressedSize) }}</span
-            >
-            <span
-              class="saved-mini"
-              :class="{ 'saved-negative': totalCompressionRatio < 0 }"
-            >
-              {{ totalCompressionRatio < 0 ? '+' : '-'
-              }}{{ Math.abs(totalCompressionRatio).toFixed(1) }}%
-            </span>
+            <span class="size-label">Total: {{ formatFileSize(totalOriginalSize) }} →
+              {{ formatFileSize(totalCompressedSize) }}</span>
+            <span class="saved-mini" :class="{ 'saved-negative': totalCompressionRatio < 0 }">
+              {{ totalCompressionRatio < 0 ? '+' : '-' }}{{ Math.abs(totalCompressionRatio).toFixed(1) }}% </span>
           </div>
         </div>
 
         <div class="toolbar-divider" />
 
+        <!-- 性能监控信息 -->
+        <!-- 简洁的队列状态和控制 -->
+        <!-- <div
+          v-if="performanceInfo.hasActiveQueue"
+          class="toolbar-section queue-section"
+        >
+          <div class="queue-info">
+            <span class="queue-status">
+              Queue: {{ performanceInfo.queueStatus }}
+            </span>
+            <button
+              class="queue-clear-btn"
+              title="Clear Queue"
+              @click="clearQueue"
+            >
+              ✕
+            </button>
+          </div>
+        </div> -->
+
+        <!-- <div v-if="performanceInfo.hasActiveQueue" class="toolbar-divider" /> -->
+
         <div class="toolbar-section options-section">
           <div class="exif-option">
-            <el-checkbox
-              v-model="preserveExif"
-              @change="handlePreserveExifChange"
-            >
+            <el-checkbox v-model="preserveExif" @change="handlePreserveExifChange">
               <span class="exif-label"><span>Preserve</span> EXIF</span>
             </el-checkbox>
           </div>
@@ -1523,29 +1895,18 @@ function handleImageMouseUp() {
             <div class="global-quality-header">
               <div class="quality-info-global">
                 <span class="quality-label-global">Global Quality</span>
-                <span class="quality-value-global"
-                  >{{ globalQualityPercent }}%</span
-                >
+                <span class="quality-value-global">{{ globalQualityPercent }}%</span>
               </div>
               <div class="quality-indicator">
                 <div class="quality-bar-bg">
-                  <div
-                    class="quality-bar-fill"
-                    :style="{ width: globalQualityPercent + '%' }"
-                  ></div>
+                  <div class="quality-bar-fill" :style="{ width: `${globalQualityPercent}%` }" />
                 </div>
               </div>
             </div>
             <el-slider
-              :model-value="globalQualityPercent"
-              @input="handleGlobalQualityInput"
+              :model-value="globalQualityPercent" :max="100" :step="1" :min="1" class="global-quality-slider"
+              :show-tooltip="false" size="small" @input="handleGlobalQualityInput"
               @change="handleGlobalQualitySliderChange"
-              :max="100"
-              :step="1"
-              :min="1"
-              class="global-quality-slider"
-              :show-tooltip="false"
-              size="small"
             />
           </div>
         </div>
@@ -1554,11 +1915,8 @@ function handleImageMouseUp() {
 
         <div v-if="allCompressed" class="toolbar-section download-section">
           <button
-            class="download-btn-new"
-            :class="[{ downloading }]"
-            :disabled="downloading"
-            title="Download All Compressed Images"
-            @click="downloadAllImages"
+            class="download-btn-new" :class="[{ downloading }]" :disabled="downloading"
+            title="Download All Compressed Images" @click="downloadAllImages"
           >
             <div class="download-btn-content">
               <div class="download-icon">
@@ -1586,18 +1944,11 @@ function handleImageMouseUp() {
         <!-- 图片列表缩略图 -->
         <div class="images-grid">
           <div
-            v-for="(item, index) in imageItems"
-            :key="item.id"
-            class="image-card"
-            :class="{ active: index === currentImageIndex }"
-            @click="setCurrentImage(index)"
+            v-for="(item, index) in imageItems" :key="item.id" class="image-card"
+            :class="{ active: index === currentImageIndex }" @click="setCurrentImage(index)"
           >
             <div class="image-preview">
-              <img
-                class="preview-image"
-                :src="item.originalUrl"
-                :alt="item.file.name"
-              />
+              <img class="preview-image" :src="item.originalUrl" :alt="item.file.name">
               <div v-if="item.isCompressing" class="compressing-overlay">
                 <el-icon class="is-loading">
                   <Loading />
@@ -1629,11 +1980,8 @@ function handleImageMouseUp() {
                     <div class="size-arrow">
                       <svg width="12" height="8" viewBox="0 0 12 8" fill="none">
                         <path
-                          d="M1 4H11M11 4L8 1M11 4L8 7"
-                          stroke="currentColor"
-                          stroke-width="1.5"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
+                          d="M1 4H11M11 4L8 1M11 4L8 7" stroke="currentColor" stroke-width="1.5"
+                          stroke-linecap="round" stroke-linejoin="round"
                         />
                       </svg>
                     </div>
@@ -1646,14 +1994,12 @@ function handleImageMouseUp() {
                   </div>
                   <div class="compression-ratio">
                     <span
-                      class="ratio-badge"
-                      :class="{
+                      class="ratio-badge" :class="{
                         'ratio-negative': (item.compressionRatio || 0) < 0,
                       }"
                     >
-                      {{ (item.compressionRatio || 0) < 0 ? '+' : '-'
-                      }}{{ Math.abs(item.compressionRatio || 0).toFixed(1) }}%
-                    </span>
+                      {{ (item.compressionRatio || 0) < 0 ? '+' : '-' }}{{ Math.abs(item.compressionRatio
+                        || 0).toFixed(1) }}% </span>
                   </div>
                 </div>
               </div>
@@ -1663,37 +2009,24 @@ function handleImageMouseUp() {
                 <div class="quality-header">
                   <div class="quality-info">
                     <span class="quality-label">Quality</span>
-                    <span class="quality-value"
-                      >{{ Math.round(item.qualityDragging * 100) }}%</span
-                    >
+                    <span class="quality-value">{{ Math.round(item.qualityDragging * 100) }}%</span>
                   </div>
                   <button
-                    v-if="item.isQualityCustomized"
-                    class="reset-quality-btn"
-                    title="Reset to global quality"
+                    v-if="item.isQualityCustomized" class="reset-quality-btn" title="Reset to global quality"
                     @click.stop="resetImageQualityToGlobal(item)"
                   >
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                       <path
                         d="M2 6C2 3.79 3.79 2 6 2C7.5 2 8.78 2.88 9.41 4.12M10 6C10 8.21 8.21 10 6 10C4.5 10 3.22 9.12 2.59 7.88M9.5 3.5L9.41 4.12L8.79 4.03"
-                        stroke="currentColor"
-                        stroke-width="1.2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
+                        stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"
                       />
                     </svg>
                   </button>
                 </div>
                 <el-slider
-                  :model-value="Math.round(item.qualityDragging * 100)"
-                  :max="100"
-                  :step="1"
-                  :min="1"
-                  class="image-quality-slider"
-                  :show-tooltip="false"
-                  size="small"
-                  @input="(val: number) => handleImageQualityInput(item, val)"
-                  @change="
+                  :model-value="Math.round(item.qualityDragging * 100)" :max="100" :step="1" :min="1"
+                  class="image-quality-slider" :show-tooltip="false" size="small"
+                  @input="(val: number) => handleImageQualityInput(item, val)" @change="
                     (val: number) => handleImageQualitySliderChange(item, val)
                   "
                 />
@@ -1701,20 +2034,14 @@ function handleImageMouseUp() {
             </div>
             <div class="image-actions">
               <button
-                v-if="item.compressedUrl && !item.compressionError"
-                class="action-btn-small download-single"
-                title="Download this image"
-                @click.stop="downloadImage(item)"
+                v-if="item.compressedUrl && !item.compressionError" class="action-btn-small download-single"
+                title="Download this image" @click.stop="downloadImage(item)"
               >
                 <el-icon>
                   <Download />
                 </el-icon>
               </button>
-              <button
-                class="action-btn-small delete-single"
-                title="Remove this image"
-                @click.stop="deleteImage(index)"
-              >
+              <button class="action-btn-small delete-single" title="Remove this image" @click.stop="deleteImage(index)">
                 <el-icon>
                   <CloseBold />
                 </el-icon>
@@ -1724,24 +2051,14 @@ function handleImageMouseUp() {
         </div>
 
         <!-- 全屏图片对比预览 -->
-        <div
-          v-if="currentImage"
-          class="fullscreen-comparison"
-          :class="{ 'fullscreen-mode': isFullscreen }"
-        >
+        <div v-if="currentImage" class="fullscreen-comparison" :class="{ 'fullscreen-mode': isFullscreen }">
           <div
-            class="comparison-container-fullscreen"
-            :style="{
+            class="comparison-container-fullscreen" :style="{
               cursor: imageZoom > 1 ? 'move' : 'default',
-            }"
-            @wheel="handleWheel"
-            @mousedown="handleImageMouseDown"
+            }" @wheel="handleWheel" @mousedown="handleImageMouseDown"
           >
             <!-- 调试信息 -->
-            <div
-              v-if="!currentImage.originalUrl || !currentImage.compressedUrl"
-              class="debug-info"
-            >
+            <div v-if="!currentImage.originalUrl || !currentImage.compressedUrl" class="debug-info">
               <p>调试信息:</p>
               <p>
                 originalUrl:
@@ -1772,67 +2089,44 @@ function handleImageMouseUp() {
             <!-- 主要的图片对比组件 -->
             <img-comparison-slider
               v-if="currentImage.originalUrl && currentImage.compressedUrl"
-              class="comparison-slider-fullscreen"
-              value="50"
+              class="comparison-slider-fullscreen" value="50"
             >
               <!-- eslint-disable -->
-              <img
-                slot="first"
-                :src="currentImage.originalUrl"
-                alt="Original Image"
-                class="comparison-image-fullscreen"
+              <img slot="first" :src="currentImage.originalUrl" alt="Original Image" class="comparison-image-fullscreen"
                 :style="{
                   transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
                   transformOrigin: 'center center',
-                }"
-                loading="eager"
-                decoding="sync"
-                @load="handleImageLoad('original')"
-                @error="console.error('原图加载失败')"
-              />
-              <img
-                slot="second"
-                :src="currentImage.compressedUrl"
-                alt="Compressed Image"
-                class="comparison-image-fullscreen"
-                :style="{
+                }" loading="eager" decoding="sync" @load="handleImageLoad('original')"
+                @error="console.error('原图加载失败')" />
+              <img slot="second" :src="currentImage.compressedUrl" alt="Compressed Image"
+                class="comparison-image-fullscreen" :style="{
                   transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
                   transformOrigin: 'center center',
-                }"
-                loading="eager"
-                decoding="sync"
-                @load="handleImageLoad('compressed')"
-                @error="console.error('压缩图加载失败')"
-              />
+                }" loading="eager" decoding="sync" @load="handleImageLoad('compressed')"
+                @error="console.error('压缩图加载失败')" />
               <!-- eslint-enable -->
             </img-comparison-slider>
 
             <!-- 仅显示原图（压缩中或出错时） -->
-            <div
-              v-else-if="currentImage.originalUrl"
-              class="single-image-preview"
-            >
+            <div v-else-if="currentImage.originalUrl" class="single-image-preview">
               <img
-                :src="currentImage.originalUrl"
-                :alt="currentImage.file.name"
-                class="single-image"
-                :style="{
+                :src="currentImage.originalUrl" :alt="currentImage.file.name" class="single-image" :style="{
                   transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
                   transformOrigin: 'center center',
-                }"
-                @load="handleImageLoad('original')"
-              />
+                }" @load="handleImageLoad('original')"
+              >
               <div v-if="currentImage.isCompressing" class="preview-overlay">
                 <el-icon class="is-loading" size="30px">
                   <Loading />
                 </el-icon>
-                <div class="overlay-text">Compressing...</div>
+                <div class="overlay-text">
+                  Compressing...
+                </div>
               </div>
-              <div
-                v-if="currentImage.compressionError"
-                class="preview-overlay error"
-              >
-                <div class="overlay-text">Compression Error</div>
+              <div v-if="currentImage.compressionError" class="preview-overlay error">
+                <div class="overlay-text">
+                  Compression Error
+                </div>
                 <div class="overlay-subtext">
                   {{ currentImage.compressionError }}
                 </div>
@@ -1841,8 +2135,7 @@ function handleImageMouseUp() {
 
             <!-- 图片信息覆盖层 -->
             <div
-              class="image-overlay-info"
-              :class="{
+              class="image-overlay-info" :class="{
                 'mobile-dragging': isMobileDragging,
                 'pc-dragging': isPCDragging,
               }"
@@ -1852,64 +2145,46 @@ function handleImageMouseUp() {
                   {{ currentImage.file.name }}
                 </div>
                 <div class="image-controls">
-                  <el-button
-                    circle
-                    size="small"
-                    @click="zoomOut"
-                    :disabled="imageZoom <= 0.1"
-                    title="缩小 (-)"
-                  >
-                    <el-icon><ZoomOut /></el-icon>
+                  <el-button circle size="small" :disabled="imageZoom <= 0.1" title="缩小 (-)" @click="zoomOut">
+                    <el-icon>
+                      <ZoomOut />
+                    </el-icon>
                   </el-button>
-                  <span class="zoom-info"
-                    >{{ Math.round(imageZoom * 100) }}%</span
-                  >
-                  <el-button
-                    circle
-                    size="small"
-                    @click="zoomIn"
-                    :disabled="imageZoom >= 5"
-                    title="放大 (+)"
-                  >
-                    <el-icon><ZoomIn /></el-icon>
+                  <span class="zoom-info">{{ Math.round(imageZoom * 100) }}%</span>
+                  <el-button circle size="small" :disabled="imageZoom >= 5" title="放大 (+)" @click="zoomIn">
+                    <el-icon>
+                      <ZoomIn />
+                    </el-icon>
+                  </el-button>
+                  <el-button circle size="small" title="重置缩放 (0)" @click="resetZoom">
+                    <el-icon>
+                      <Aim />
+                    </el-icon>
                   </el-button>
                   <el-button
-                    circle
-                    size="small"
-                    @click="resetZoom"
-                    title="重置缩放 (0)"
-                  >
-                    <el-icon><Aim /></el-icon>
-                  </el-button>
-                  <el-button
-                    circle
-                    size="small"
+                    circle size="small" :title="isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'"
                     @click="toggleFullscreen"
-                    :title="isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'"
                   >
-                    <el-icon><FullScreen /></el-icon>
+                    <el-icon>
+                      <FullScreen />
+                    </el-icon>
                   </el-button>
                 </div>
               </div>
               <div class="image-details">
-                <span
-                  >{{ currentImageIndex + 1 }} / {{ imageItems.length }}</span
-                >
+                <span>{{ currentImageIndex + 1 }} / {{ imageItems.length }}</span>
                 <span>Quality: {{ currentImage.quality }}%</span>
                 <span>{{ formatFileSize(currentImage.originalSize) }}</span>
                 <span v-if="currentImage.compressedSize">
                   → {{ formatFileSize(currentImage.compressedSize) }}
                 </span>
                 <span
-                  v-if="currentImage.compressionRatio"
-                  class="savings"
-                  :class="{
+                  v-if="currentImage.compressionRatio" class="savings" :class="{
                     'savings-negative': currentImage.compressionRatio < 0,
                   }"
                 >
-                  ({{ currentImage.compressionRatio < 0 ? '+' : '-'
-                  }}{{ Math.abs(currentImage.compressionRatio).toFixed(1) }}%)
-                </span>
+                  ({{ currentImage.compressionRatio < 0 ? '+' : '-' }}{{
+                    Math.abs(currentImage.compressionRatio).toFixed(1) }}%) </span>
               </div>
             </div>
           </div>
@@ -1918,25 +2193,18 @@ function handleImageMouseUp() {
     </main>
 
     <input
-      id="file"
-      ref="fileRef"
-      type="file"
-      accept="image/png,image/jpg,image/jpeg,image/gif,image/webp"
-      multiple
-      hidden
-    />
+      id="file" ref="fileRef" type="file" accept="image/png,image/jpg,image/jpeg,image/gif,image/webp" multiple
+      hidden @change="handleFileInputChange"
+    >
 
     <!-- 设置面板 -->
-    <el-dialog
-      v-model="showSettingsPanel"
-      title="Settings"
-      width="600px"
-      :close-on-click-modal="false"
-    >
+    <el-dialog v-model="showSettingsPanel" title="Settings" width="600px" :close-on-click-modal="false">
       <div class="settings-content">
         <div class="settings-section">
           <h3 class="settings-title">
-            <el-icon><Key /></el-icon>
+            <el-icon>
+              <Key />
+            </el-icon>
             Tool Configurations
           </h3>
           <p class="settings-description">
@@ -1944,33 +2212,21 @@ function handleImageMouseUp() {
           </p>
 
           <div class="tool-config-list">
-            <div
-              v-for="(config, index) in tempToolConfigs"
-              :key="index"
-              class="tool-config-item"
-            >
+            <div v-for="(config, index) in tempToolConfigs" :key="index" class="tool-config-item">
               <div class="tool-header">
                 <div class="tool-info">
-                  <el-icon class="tool-icon"><Picture /></el-icon>
+                  <el-icon class="tool-icon">
+                    <Picture />
+                  </el-icon>
                   <span class="tool-name">{{ config.name.toUpperCase() }}</span>
-                  <el-tag
-                    :type="config.enabled && config.key ? 'success' : 'info'"
-                    size="small"
-                  >
+                  <el-tag :type="config.enabled && config.key ? 'success' : 'info'" size="small">
                     {{ config.enabled && config.key ? 'Enabled' : 'Disabled' }}
                   </el-tag>
                 </div>
                 <div class="tool-actions">
-                  <el-switch
-                    v-model="config.enabled"
-                    :disabled="!config.key.trim()"
-                  />
+                  <el-switch v-model="config.enabled" :disabled="!config.key.trim()" />
                   <el-button
-                    v-if="tempToolConfigs.length > 1"
-                    type="danger"
-                    size="small"
-                    :icon="Delete"
-                    circle
+                    v-if="tempToolConfigs.length > 1" type="danger" size="small" :icon="Delete" circle
                     @click="removeToolConfig(index)"
                   />
                 </div>
@@ -1979,25 +2235,19 @@ function handleImageMouseUp() {
               <div class="tool-config">
                 <el-form-item label="Tool">
                   <el-select v-model="config.name" placeholder="Select a tool">
-                    <el-option
-                      v-for="tool in availableTools"
-                      :key="tool"
-                      :label="tool.toUpperCase()"
-                      :value="tool"
-                    />
+                    <el-option v-for="tool in availableTools" :key="tool" :label="tool.toUpperCase()" :value="tool" />
                   </el-select>
                 </el-form-item>
 
                 <el-form-item label="API Key">
                   <el-input
-                    v-model="config.key"
-                    type="password"
-                    placeholder="Enter your API key"
-                    show-password
+                    v-model="config.key" type="password" placeholder="Enter your API key" show-password
                     clearable
                   >
                     <template #prepend>
-                      <el-icon><Key /></el-icon>
+                      <el-icon>
+                        <Key />
+                      </el-icon>
                     </template>
                   </el-input>
                 </el-form-item>
@@ -2006,11 +2256,7 @@ function handleImageMouseUp() {
                   <p class="help-text">
                     <strong>TinyPNG API Key:</strong>
                     Get your free API key from
-                    <a
-                      href="https://tinypng.com/developers"
-                      target="_blank"
-                      class="help-link"
-                    >
+                    <a href="https://tinypng.com/developers" target="_blank" class="help-link">
                       TinyPNG Developer Portal
                     </a>
                   </p>
@@ -2031,7 +2277,9 @@ function handleImageMouseUp() {
 
         <div class="settings-section">
           <h3 class="settings-title">
-            <el-icon><Setting /></el-icon>
+            <el-icon>
+              <Setting />
+            </el-icon>
             Usage Information
           </h3>
           <div class="usage-info">
@@ -2052,8 +2300,12 @@ function handleImageMouseUp() {
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="closeSettingsPanel">Cancel</el-button>
-          <el-button type="primary" @click="saveSettings"> Save </el-button>
+          <el-button @click="closeSettingsPanel">
+            Cancel
+          </el-button>
+          <el-button type="primary" @click="saveSettings">
+            Save
+          </el-button>
         </div>
       </template>
     </el-dialog>
@@ -2094,7 +2346,7 @@ function handleImageMouseUp() {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 2000;
+  z-index: 103;
   animation: fadeIn 0.2s ease;
 }
 
@@ -2161,11 +2413,9 @@ function handleImageMouseUp() {
 .bg-circle {
   position: absolute;
   border-radius: 50%;
-  background: linear-gradient(
-    45deg,
-    rgba(255, 255, 255, 0.1),
-    rgba(255, 255, 255, 0.05)
-  );
+  background: linear-gradient(45deg,
+      rgba(255, 255, 255, 0.1),
+      rgba(255, 255, 255, 0.05));
   animation: float 6s ease-in-out infinite;
 }
 
@@ -2194,6 +2444,7 @@ function handleImageMouseUp() {
 }
 
 @keyframes float {
+
   0%,
   100% {
     transform: translateY(0px) rotate(0deg);
@@ -2213,18 +2464,36 @@ function handleImageMouseUp() {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(102, 126, 234, 0.95),
-    rgba(118, 75, 162, 0.95)
-  );
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(135deg,
+      rgba(102, 126, 234, 0.95),
+      rgba(118, 75, 162, 0.95));
   backdrop-filter: blur(10px);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 100;
+  /* 确保覆盖层不受页面内容影响 */
+  box-sizing: border-box;
+  overflow: hidden;
+  /* 防止滚动和交互 */
+  touch-action: none;
+  -webkit-overflow-scrolling: touch;
+  /* 确保在最顶层，完全覆盖 */
+  pointer-events: auto;
+  /* 强制使用视口单位，不受内容影响 */
+  min-width: 100vw;
+  min-height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  /* 确保定位不受影响 */
+  margin: 0;
+  padding: 0;
+  border: none;
+  /* 防止任何变换影响 */
+  transform: none;
+  will-change: auto;
 }
 
 .loading-spinner {
@@ -2236,6 +2505,15 @@ function handleImageMouseUp() {
   margin-top: 16px;
   font-size: 18px;
   font-weight: 500;
+}
+
+.loading-progress {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 400;
+  opacity: 0.9;
+  color: rgba(255, 255, 255, 0.8);
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
 }
 
 /* Header */
@@ -2397,12 +2675,10 @@ function handleImageMouseUp() {
 .toolbar-divider {
   width: 1px;
   height: 32px;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    rgba(0, 0, 0, 0.1),
-    transparent
-  );
+  background: linear-gradient(to bottom,
+      transparent,
+      rgba(0, 0, 0, 0.1),
+      transparent);
   margin: 0 6px;
 }
 
@@ -2475,12 +2751,10 @@ function handleImageMouseUp() {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.4),
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.4),
+      transparent);
   transition: left 0.5s;
 }
 
@@ -2593,7 +2867,8 @@ function handleImageMouseUp() {
 
 /* 确保 mini-slider 滑轨可点击 */
 .mini-slider :deep(.el-slider__runway) {
-  height: 8px; /* 增加点击区域高度 */
+  height: 8px;
+  /* 增加点击区域高度 */
   cursor: pointer;
   position: relative;
   z-index: 1;
@@ -2603,7 +2878,8 @@ function handleImageMouseUp() {
 .mini-slider :deep(.el-slider) {
   position: relative;
   z-index: 1;
-  padding: 10px 0; /* 增加上下padding，扩大点击区域 */
+  padding: 10px 0;
+  /* 增加上下padding，扩大点击区域 */
 }
 
 /* 工具栏滑块按钮样式 */
@@ -2640,7 +2916,8 @@ function handleImageMouseUp() {
   align-items: center;
   gap: 8px;
   height: 45px;
-  min-width: 230px; /* 防止数字变化时工具栏抖动 */
+  min-width: 230px;
+  /* 防止数字变化时工具栏抖动 */
 }
 
 .size-label {
@@ -2654,11 +2931,9 @@ function handleImageMouseUp() {
   font-size: 11px;
   color: #16a34a;
   font-weight: 700;
-  background: linear-gradient(
-    135deg,
-    rgba(34, 197, 94, 0.1),
-    rgba(34, 197, 94, 0.2)
-  );
+  background: linear-gradient(135deg,
+      rgba(34, 197, 94, 0.1),
+      rgba(34, 197, 94, 0.2));
   padding: 4px 8px;
   border-radius: 12px;
   border: 1px solid rgba(34, 197, 94, 0.2);
@@ -2669,11 +2944,9 @@ function handleImageMouseUp() {
 
 .saved-mini.saved-negative {
   color: #dc2626;
-  background: linear-gradient(
-    135deg,
-    rgba(220, 38, 38, 0.1),
-    rgba(220, 38, 38, 0.2)
-  );
+  background: linear-gradient(135deg,
+      rgba(220, 38, 38, 0.1),
+      rgba(220, 38, 38, 0.2));
   border: 1px solid rgba(220, 38, 38, 0.2);
   box-shadow: 0 2px 4px rgba(220, 38, 38, 0.1);
 }
@@ -2767,12 +3040,10 @@ function handleImageMouseUp() {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.3) 50%,
-    transparent 100%
-  );
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.3) 50%,
+      transparent 100%);
   animation: shimmer 2s infinite;
 }
 
@@ -2780,6 +3051,7 @@ function handleImageMouseUp() {
   0% {
     transform: translateX(-100%);
   }
+
   100% {
     transform: translateX(100%);
   }
@@ -2878,12 +3150,10 @@ function handleImageMouseUp() {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.2),
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent);
   transition: left 0.6s;
 }
 
@@ -2979,11 +3249,13 @@ function handleImageMouseUp() {
 /* PC端样式优化 - 避免滚动条 */
 @media (min-width: 769px) {
   .app-container {
-    overflow-y: hidden; /* PC端完全禁用滚动 */
+    overflow-y: hidden;
+    /* PC端完全禁用滚动 */
   }
 
   .header-section {
-    flex-shrink: 0; /* 确保header不会被压缩 */
+    flex-shrink: 0;
+    /* 确保header不会被压缩 */
     height: auto;
     min-height: 120px;
   }
@@ -3010,6 +3282,7 @@ function handleImageMouseUp() {
 
 /* 小屏幕下隐藏操作按钮文字 - 仅PC端 */
 @media (max-width: 1180px) and (min-width: 769px) {
+
   .add-btn .btn-text,
   .delete-btn .btn-text {
     display: none;
@@ -3021,9 +3294,10 @@ function handleImageMouseUp() {
     justify-content: center;
   }
 }
+
 /* 小屏幕下隐藏操作按钮文字 - 仅PC端 */
 @media (max-width: 1030px) and (min-width: 769px) {
-  .exif-label > span {
+  .exif-label>span {
     display: none;
   }
 }
@@ -3184,17 +3458,16 @@ function handleImageMouseUp() {
   .toolbar-divider {
     width: 100%;
     height: 1px;
-    background: linear-gradient(
-      to right,
-      transparent,
-      rgba(0, 0, 0, 0.1),
-      transparent
-    );
+    background: linear-gradient(to right,
+        transparent,
+        rgba(0, 0, 0, 0.1),
+        transparent);
     margin: 0;
   }
 
   .stats-info {
-    min-width: 220px; /* 移动端使用较小的最小宽度 */
+    min-width: 220px;
+    /* 移动端使用较小的最小宽度 */
     justify-content: center;
   }
 
@@ -3239,6 +3512,7 @@ function handleImageMouseUp() {
     height: 300px;
     display: flex;
   }
+
   .comparison-container-fullscreen {
     max-height: 70vh;
     display: flex;
@@ -3631,7 +3905,8 @@ img-comparison-slider img {
   width: fit-content;
   display: flex;
   cursor: pointer;
-  z-index: 3; /* 确保按钮在最上层 */
+  z-index: 3;
+  /* 确保按钮在最上层 */
 }
 
 .image-quality-slider {
@@ -3811,7 +4086,7 @@ img-comparison-slider img {
     opacity 0.2s ease,
     visibility 0.2s ease;
   pointer-events: none;
-  z-index: 1000;
+  z-index: 102;
 }
 
 /* 全屏模式样式 */
@@ -3822,7 +4097,7 @@ img-comparison-slider img {
   width: 100vw;
   height: 100vh;
   background: rgba(0, 0, 0, 0.95);
-  z-index: 9999;
+  z-index: 140;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3942,7 +4217,7 @@ img-comparison-slider img {
   padding: 8px 16px;
   border-radius: 4px;
   font-size: 12px;
-  z-index: 10000;
+  z-index: 141;
   opacity: 0;
   animation: fadeInOut 4s ease-in-out;
 }
@@ -3951,12 +4226,15 @@ img-comparison-slider img {
   0% {
     opacity: 0;
   }
+
   10% {
     opacity: 1;
   }
+
   90% {
     opacity: 1;
   }
+
   100% {
     opacity: 0;
   }
@@ -4134,5 +4412,88 @@ img-comparison-slider img {
   background: rgba(255, 255, 255, 0.3);
   border-color: rgba(255, 255, 255, 0.4);
   transform: translateY(-1px);
+}
+
+/* FPS-style info overlay in top-left corner */
+.fps-style-info {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 110;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  font-family: 'Courier New', monospace;
+}
+
+.memory-indicator,
+.worker-indicator {
+  background: rgba(0, 0, 0, 0.8);
+  color: #00ff41;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(0, 255, 65, 0.3);
+}
+
+.memory-indicator.memory-high {
+  color: #ff4444;
+  border-color: rgba(255, 68, 68, 0.3);
+}
+
+.worker-indicator {
+  color: #44ffff;
+  border-color: rgba(68, 255, 255, 0.3);
+}
+
+/* Queue section styling */
+.queue-section {
+  display: flex;
+  align-items: center;
+}
+
+.queue-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.queue-status {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.queue-clear-btn {
+  background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  color: white;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.queue-clear-btn:hover {
+  transform: translateY(-1px) scale(1.05);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.queue-clear-btn:active {
+  transform: translateY(0px) scale(0.95);
 }
 </style>
