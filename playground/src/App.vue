@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import {
-  Aim,
-  CloseBold,
   Delete,
   Download,
-  FolderOpened,
   FullScreen,
   Key,
   Loading,
@@ -22,7 +19,6 @@ import { download } from 'lazy-js-utils'
 import { h } from 'vue'
 import {
   compressEnhanced,
-  compressEnhancedBatch,
   compressionQueue,
   getCompressionStats,
   memoryManager,
@@ -55,6 +51,7 @@ interface CompressionStatsInfo {
   queueRunning: number
   queueCompleted: number
   memoryUsage: number
+  memoryAbsolute: number
   isWorkerSupported: boolean
   currentConcurrency: number
 }
@@ -95,6 +92,7 @@ const compressionStats = ref<CompressionStatsInfo>({
   queueRunning: 0,
   queueCompleted: 0,
   memoryUsage: 0,
+  memoryAbsolute: 0,
   isWorkerSupported: false,
   currentConcurrency: 0,
 })
@@ -554,15 +552,36 @@ function clearQueue() {
   }
 }
 
-// 格式化性能统计信息
+// 格式化性能统计信息 - 重新设计以确保队列数字准确
 const performanceInfo = computed(() => {
   const stats = compressionStats.value
+
+  // 计算实际的队列状态，基于本地图片状态验证
+  const actualRunning = imageItems.value.filter(
+    (item) => item.isCompressing,
+  ).length
+  const actualTotal = imageItems.value.length
+  const actualCompleted = imageItems.value.filter(
+    (item) =>
+      !item.isCompressing && item.compressedUrl && !item.compressionError,
+  ).length
+
+  // 使用本地状态作为主要数据源，stats作为备用
+  const queueRunning = actualRunning > 0 ? actualRunning : stats.queueRunning
+  const queuePending = Math.max(0, actualTotal - actualCompleted - queueRunning)
+
   return {
-    queueStatus: `${stats.queueRunning}/${stats.currentConcurrency} running, ${stats.queuePending} pending`,
+    queueStatus:
+      queueRunning > 0 || queuePending > 0
+        ? `${queueRunning}/${queuePending + queueRunning}`
+        : '',
     memoryStatus:
-      stats.memoryUsage > 0 ? `${Math.round(stats.memoryUsage)}%` : 'N/A',
+      stats.memoryUsage > 0 ? `${Math.round(stats.memoryUsage)}%` : '',
+    memoryAbsolute: stats.memoryAbsolute || 0, // 绝对内存值 (MB)
     workerStatus: stats.isWorkerSupported ? 'Enabled' : 'Disabled',
-    totalProcessed: stats.queueCompleted,
+    hasActiveQueue: queueRunning > 0 || queuePending > 0,
+    actualRunning: queueRunning,
+    actualPending: queuePending,
   }
 })
 
@@ -1140,11 +1159,20 @@ function updateCompressionStats() {
     const stats = getCompressionStats()
     const memoryStats = memoryManager.getMemoryStats()
 
+    // 获取绝对内存使用量 (MB)
+    let memoryAbsolute = 0
+    if ((performance as any).memory) {
+      memoryAbsolute = Math.round(
+        (performance as any).memory.usedJSHeapSize / 1024 / 1024,
+      )
+    }
+
     compressionStats.value = {
       queuePending: stats.queue.pending,
       queueRunning: stats.queue.running,
       queueCompleted: stats.queue.completed,
       memoryUsage: memoryStats.memoryUsagePercentage,
+      memoryAbsolute, // 绝对内存值 (MB)
       isWorkerSupported: stats.worker.supported,
       currentConcurrency: stats.queue.maxConcurrency,
     }
@@ -1155,8 +1183,18 @@ function updateCompressionStats() {
 
 // 启动性能监控
 function startPerformanceMonitoring() {
-  // 每3秒更新一次统计信息
-  setInterval(updateCompressionStats, 3000)
+  // 每10秒更新一次统计信息
+  setInterval(updateCompressionStats, 10000)
+
+  // 单独的内存监控，每5秒更新一次，确保压缩时实时显示
+  setInterval(() => {
+    if ((performance as any).memory) {
+      const memoryAbsolute = Math.round(
+        (performance as any).memory.usedJSHeapSize / 1024 / 1024,
+      )
+      compressionStats.value.memoryAbsolute = memoryAbsolute
+    }
+  }, 5000)
 
   // 初始更新
   updateCompressionStats()
@@ -1646,6 +1684,20 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
 <template>
   <div class="app-container" :class="{ 'drag-over': isDragOver }">
+    <!-- 左上角内存和状态显示 -->
+    <div class="fps-style-info">
+      <div
+        v-if="performanceInfo.memoryAbsolute > 0"
+        class="memory-indicator"
+        :class="{ 'memory-high': compressionStats.memoryUsage > 80 }"
+      >
+        RAM: {{ performanceInfo.memoryAbsolute }}MB
+      </div>
+      <div v-if="compressionStats.isWorkerSupported" class="worker-indicator">
+        ⚡ Worker
+      </div>
+    </div>
+
     <!-- 拖拽覆盖层 -->
     <div v-show="isDragOver" class="drag-overlay">
       <div class="drag-message">
@@ -1792,66 +1844,26 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
         <div class="toolbar-divider" />
 
         <!-- 性能监控信息 -->
-        <div class="toolbar-section performance-section">
-          <div class="performance-info">
-            <div class="performance-header">
-              <span class="performance-label">Performance</span>
-              <span
-                class="worker-status"
-                :class="{
-                  'worker-enabled': compressionStats.isWorkerSupported,
-                }"
-              >
-                {{ compressionStats.isWorkerSupported ? '⚡' : '⚠️' }}
-              </span>
-            </div>
-            <div class="performance-details">
-              <div class="performance-item">
-                <span class="item-label">Queue:</span>
-                <span class="item-value">{{
-                  performanceInfo.queueStatus
-                }}</span>
-              </div>
-              <div
-                v-if="compressionStats.memoryUsage > 0"
-                class="performance-item"
-              >
-                <span class="item-label">Memory:</span>
-                <span
-                  class="item-value"
-                  :class="{ 'memory-high': compressionStats.memoryUsage > 80 }"
-                >
-                  {{ performanceInfo.memoryStatus }}
-                </span>
-              </div>
-              <div class="performance-item">
-                <span class="item-label">Processed:</span>
-                <span class="item-value">{{
-                  performanceInfo.totalProcessed
-                }}</span>
-              </div>
-            </div>
-
-            <!-- 性能控制按钮 -->
-            <div
-              v-if="
-                compressionStats.queuePending > 0 ||
-                compressionStats.queueRunning > 0
-              "
-              class="performance-controls"
+        <!-- 简洁的队列状态和控制 -->
+        <div
+          v-if="performanceInfo.hasActiveQueue"
+          class="toolbar-section queue-section"
+        >
+          <div class="queue-info">
+            <span class="queue-status">
+              Queue: {{ performanceInfo.queueStatus }}
+            </span>
+            <button
+              class="queue-clear-btn"
+              title="Clear Queue"
+              @click="clearQueue"
             >
-              <button
-                class="performance-btn clear-queue-btn"
-                title="Clear pending compression tasks"
-                @click="clearQueue"
-              >
-                Clear Queue
-              </button>
-            </div>
+              ✕
+            </button>
           </div>
         </div>
 
-        <div class="toolbar-divider" />
+        <div v-if="performanceInfo.hasActiveQueue" class="toolbar-divider" />
 
         <div class="toolbar-section options-section">
           <div class="exif-option">
@@ -2441,7 +2453,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 2000;
+  z-index: 103;
   animation: fadeIn 0.2s ease;
 }
 
@@ -2571,7 +2583,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 10000;
+  z-index: 100;
   /* 确保覆盖层不受页面内容影响 */
   box-sizing: border-box;
   overflow: hidden;
@@ -4187,7 +4199,7 @@ img-comparison-slider img {
     opacity 0.2s ease,
     visibility 0.2s ease;
   pointer-events: none;
-  z-index: 1000;
+  z-index: 102;
 }
 
 /* 全屏模式样式 */
@@ -4198,7 +4210,7 @@ img-comparison-slider img {
   width: 100vw;
   height: 100vh;
   background: rgba(0, 0, 0, 0.95);
-  z-index: 9999;
+  z-index: 120;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4318,7 +4330,7 @@ img-comparison-slider img {
   padding: 8px 16px;
   border-radius: 4px;
   font-size: 12px;
-  z-index: 10000;
+  z-index: 122;
   opacity: 0;
   animation: fadeInOut 4s ease-in-out;
 }
@@ -4512,110 +4524,86 @@ img-comparison-slider img {
   transform: translateY(-1px);
 }
 
-.performance-info {
+/* FPS-style info overlay in top-left corner */
+.fps-style-info {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 110;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
+  pointer-events: none;
+  font-family: 'Courier New', monospace;
+}
+
+.memory-indicator,
+.worker-indicator {
+  background: rgba(0, 0, 0, 0.8);
+  color: #00ff41;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(0, 255, 65, 0.3);
+}
+
+.memory-indicator.memory-high {
+  color: #ff4444;
+  border-color: rgba(255, 68, 68, 0.3);
+}
+
+.worker-indicator {
+  color: #44ffff;
+  border-color: rgba(68, 255, 255, 0.3);
+}
+
+/* Queue section styling */
+.queue-section {
+  display: flex;
+  align-items: center;
+}
+
+.queue-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.performance-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.performance-label {
+.queue-status {
   font-size: 14px;
   font-weight: 600;
   color: #333;
 }
 
-.worker-status {
-  font-size: 16px;
-  font-weight: 700;
-  color: #10b981;
-}
-
-.worker-status.worker-enabled {
-  color: #4ade80;
-}
-
-.performance-details {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.performance-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.item-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: #6b7280;
-}
-
-.item-value {
-  font-size: 14px;
-  font-weight: 700;
-  color: #1f2937;
-}
-
-.item-value.memory-high {
-  color: #dc2626;
-}
-
-.performance-controls {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.performance-btn {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  border: none;
-  border-radius: 6px;
-  padding: 6px 12px;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  color: white;
-  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.2);
-}
-
-.performance-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-}
-
-.performance-btn:active {
-  transform: translateY(0px) scale(0.98);
-}
-
-.clear-queue-btn {
+.queue-clear-btn {
   background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
   border: none;
-  border-radius: 6px;
-  padding: 6px 12px;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   color: white;
   box-shadow: 0 2px 6px rgba(239, 68, 68, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
 }
 
-.clear-queue-btn:hover {
-  transform: translateY(-2px);
+.queue-clear-btn:hover {
+  transform: translateY(-1px) scale(1.05);
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
 
-.clear-queue-btn:active {
-  transform: translateY(0px) scale(0.98);
+.queue-clear-btn:active {
+  transform: translateY(0px) scale(0.95);
 }
 </style>
