@@ -1910,7 +1910,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
           </div>
         </div> -->
 
-        <div v-if="performanceInfo.hasActiveQueue" class="toolbar-divider" />
+        <!-- <div v-if="performanceInfo.hasActiveQueue" class="toolbar-divider" /> -->
 
         <div class="toolbar-section options-section">
           <div class="exif-option">
