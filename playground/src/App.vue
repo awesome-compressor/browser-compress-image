@@ -465,11 +465,23 @@ onMounted(async () => {
   // 添加拖拽事件监听
   document.addEventListener('dragover', handleDragOver)
   document.addEventListener('drop', handleDrop)
+  document.addEventListener('dragenter', handleDragEnter)
   document.addEventListener('dragleave', handleDragLeave)
-
+  // 添加移动端触摸事件监听
+  document.addEventListener('touchstart', handleTouchStart, { passive: true })
+  document.addEventListener('touchend', handleTouchEnd, { passive: true })
+  document.addEventListener('touchcancel', handleTouchEnd, { passive: true })
+  // 添加PC端鼠标事件监听
+  document.addEventListener('mousedown', handleMouseDown)
+  document.addEventListener('mouseup', handleMouseUp)
+  // 添加键盘事件监听
+  document.addEventListener('keydown', handleKeydown)
+  // 添加鼠标事件监听（用于图片拖拽）
+  document.addEventListener('mousemove', handleImageMouseMove)
+  document.addEventListener('mouseup', handleImageMouseUp)
   // 添加粘贴事件监听
   document.addEventListener('paste', handlePaste)
-
+  window.addEventListener('resize', handleWindowResize)
   // 等待压缩系统初始化完成
   try {
     await waitForCompressionInitialization()
@@ -1734,8 +1746,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
     <!-- 左上角内存和状态显示 -->
     <div class="fps-style-info">
       <div
-        v-if="performanceInfo.memoryAbsolute > 0"
-        class="memory-indicator"
+        v-if="performanceInfo.memoryAbsolute > 0" class="memory-indicator"
         :class="{ 'memory-high': compressionStats.memoryUsage > 80 }"
       >
         RAM: {{ performanceInfo.memoryAbsolute }}MB
@@ -1770,21 +1781,15 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
         <div class="loading-text">
           {{ loading ? 'Loading images...' : 'Compressing images...' }}
         </div>
-        <div
-          v-if="compressionProgress.isActive && compressionProgress.total > 0"
-          class="loading-progress"
-        >
+        <div v-if="compressionProgress.isActive && compressionProgress.total > 0" class="loading-progress">
           {{ compressionProgress.current }}/{{ compressionProgress.total }}
         </div>
       </div>
     </div>
 
     <GitForkVue
-      link="https://github.com/awesome-compressor/browser-compress-image"
-      position="right"
-      type="corners"
-      content="Star on GitHub"
-      color="#667eea"
+      link="https://github.com/awesome-compressor/browser-compress-image" position="right" type="corners"
+      content="Star on GitHub" color="#667eea"
     />
 
     <!-- Header -->
@@ -1803,13 +1808,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       <!-- Settings Section - Always visible -->
       <section class="settings-section-main">
         <div class="settings-container">
-          <el-button
-            type="primary"
-            class="settings-btn-main"
-            :icon="Setting"
-            plain
-            @click="openSettingsPanel"
-          >
+          <el-button type="primary" class="settings-btn-main" :icon="Setting" plain @click="openSettingsPanel">
             Configure Compression Tools
           </el-button>
           <p class="settings-hint">
@@ -1845,11 +1844,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
           </div>
 
           <div class="action-buttons">
-            <button
-              class="action-btn add-btn"
-              title="Add More Images"
-              @click="uploadImages"
-            >
+            <button class="action-btn add-btn" title="Add More Images" @click="uploadImages">
               <div class="btn-icon">
                 <el-icon>
                   <Upload />
@@ -1857,11 +1852,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               </div>
               <span class="btn-text">Add More</span>
             </button>
-            <button
-              class="action-btn delete-btn"
-              title="Clear All Images"
-              @click="clearAllImages"
-            >
+            <button class="action-btn delete-btn" title="Clear All Images" @click="clearAllImages">
               <div class="btn-icon">
                 <el-icon>
                   <CloseBold />
@@ -1878,13 +1869,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
           <div class="stats-info">
             <span class="size-label">Total: {{ formatFileSize(totalOriginalSize) }} →
               {{ formatFileSize(totalCompressedSize) }}</span>
-            <span
-              class="saved-mini"
-              :class="{ 'saved-negative': totalCompressionRatio < 0 }"
-            >
-              {{ totalCompressionRatio < 0 ? '+' : '-'
-              }}{{ Math.abs(totalCompressionRatio).toFixed(1) }}%
-            </span>
+            <span class="saved-mini" :class="{ 'saved-negative': totalCompressionRatio < 0 }">
+              {{ totalCompressionRatio < 0 ? '+' : '-' }}{{ Math.abs(totalCompressionRatio).toFixed(1) }}% </span>
           </div>
         </div>
 
@@ -1914,10 +1900,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
         <div class="toolbar-section options-section">
           <div class="exif-option">
-            <el-checkbox
-              v-model="preserveExif"
-              @change="handlePreserveExifChange"
-            >
+            <el-checkbox v-model="preserveExif" @change="handlePreserveExifChange">
               <span class="exif-label"><span>Preserve</span> EXIF</span>
             </el-checkbox>
           </div>
@@ -1930,22 +1913,13 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               </div>
               <div class="quality-indicator">
                 <div class="quality-bar-bg">
-                  <div
-                    class="quality-bar-fill"
-                    :style="{ width: `${globalQualityPercent}%` }"
-                  />
+                  <div class="quality-bar-fill" :style="{ width: `${globalQualityPercent}%` }" />
                 </div>
               </div>
             </div>
             <el-slider
-              :model-value="globalQualityPercent"
-              :max="100"
-              :step="1"
-              :min="1"
-              class="global-quality-slider"
-              :show-tooltip="false"
-              size="small"
-              @input="handleGlobalQualityInput"
+              :model-value="globalQualityPercent" :max="100" :step="1" :min="1" class="global-quality-slider"
+              :show-tooltip="false" size="small" @input="handleGlobalQualityInput"
               @change="handleGlobalQualitySliderChange"
             />
           </div>
@@ -1955,11 +1929,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
         <div v-if="allCompressed" class="toolbar-section download-section">
           <button
-            class="download-btn-new"
-            :class="[{ downloading }]"
-            :disabled="downloading"
-            title="Download All Compressed Images"
-            @click="downloadAllImages"
+            class="download-btn-new" :class="[{ downloading }]" :disabled="downloading"
+            title="Download All Compressed Images" @click="downloadAllImages"
           >
             <div class="download-btn-content">
               <div class="download-icon">
@@ -1987,18 +1958,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
         <!-- 图片列表缩略图 -->
         <div class="images-grid">
           <div
-            v-for="(item, index) in imageItems"
-            :key="item.id"
-            class="image-card"
-            :class="{ active: index === currentImageIndex }"
-            @click="setCurrentImage(index)"
+            v-for="(item, index) in imageItems" :key="item.id" class="image-card"
+            :class="{ active: index === currentImageIndex }" @click="setCurrentImage(index)"
           >
             <div class="image-preview">
-              <img
-                class="preview-image"
-                :src="item.originalUrl"
-                :alt="item.file.name"
-              >
+              <img class="preview-image" :src="item.originalUrl" :alt="item.file.name">
               <div v-if="item.isCompressing" class="compressing-overlay">
                 <el-icon class="is-loading">
                   <Loading />
@@ -2030,11 +1994,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                     <div class="size-arrow">
                       <svg width="12" height="8" viewBox="0 0 12 8" fill="none">
                         <path
-                          d="M1 4H11M11 4L8 1M11 4L8 7"
-                          stroke="currentColor"
-                          stroke-width="1.5"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
+                          d="M1 4H11M11 4L8 1M11 4L8 7" stroke="currentColor" stroke-width="1.5"
+                          stroke-linecap="round" stroke-linejoin="round"
                         />
                       </svg>
                     </div>
@@ -2047,14 +2008,12 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   </div>
                   <div class="compression-ratio">
                     <span
-                      class="ratio-badge"
-                      :class="{
+                      class="ratio-badge" :class="{
                         'ratio-negative': (item.compressionRatio || 0) < 0,
                       }"
                     >
-                      {{ (item.compressionRatio || 0) < 0 ? '+' : '-'
-                      }}{{ Math.abs(item.compressionRatio || 0).toFixed(1) }}%
-                    </span>
+                      {{ (item.compressionRatio || 0) < 0 ? '+' : '-' }}{{ Math.abs(item.compressionRatio
+                        || 0).toFixed(1) }}% </span>
                   </div>
                 </div>
               </div>
@@ -2067,32 +2026,21 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                     <span class="quality-value">{{ Math.round(item.qualityDragging * 100) }}%</span>
                   </div>
                   <button
-                    v-if="item.isQualityCustomized"
-                    class="reset-quality-btn"
-                    title="Reset to global quality"
+                    v-if="item.isQualityCustomized" class="reset-quality-btn" title="Reset to global quality"
                     @click.stop="resetImageQualityToGlobal(item)"
                   >
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                       <path
                         d="M2 6C2 3.79 3.79 2 6 2C7.5 2 8.78 2.88 9.41 4.12M10 6C10 8.21 8.21 10 6 10C4.5 10 3.22 9.12 2.59 7.88M9.5 3.5L9.41 4.12L8.79 4.03"
-                        stroke="currentColor"
-                        stroke-width="1.2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
+                        stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"
                       />
                     </svg>
                   </button>
                 </div>
                 <el-slider
-                  :model-value="Math.round(item.qualityDragging * 100)"
-                  :max="100"
-                  :step="1"
-                  :min="1"
-                  class="image-quality-slider"
-                  :show-tooltip="false"
-                  size="small"
-                  @input="(val: number) => handleImageQualityInput(item, val)"
-                  @change="
+                  :model-value="Math.round(item.qualityDragging * 100)" :max="100" :step="1" :min="1"
+                  class="image-quality-slider" :show-tooltip="false" size="small"
+                  @input="(val: number) => handleImageQualityInput(item, val)" @change="
                     (val: number) => handleImageQualitySliderChange(item, val)
                   "
                 />
@@ -2100,20 +2048,14 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
             </div>
             <div class="image-actions">
               <button
-                v-if="item.compressedUrl && !item.compressionError"
-                class="action-btn-small download-single"
-                title="Download this image"
-                @click.stop="downloadImage(item)"
+                v-if="item.compressedUrl && !item.compressionError" class="action-btn-small download-single"
+                title="Download this image" @click.stop="downloadImage(item)"
               >
                 <el-icon>
                   <Download />
                 </el-icon>
               </button>
-              <button
-                class="action-btn-small delete-single"
-                title="Remove this image"
-                @click.stop="deleteImage(index)"
-              >
+              <button class="action-btn-small delete-single" title="Remove this image" @click.stop="deleteImage(index)">
                 <el-icon>
                   <CloseBold />
                 </el-icon>
@@ -2123,24 +2065,14 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
         </div>
 
         <!-- 全屏图片对比预览 -->
-        <div
-          v-if="currentImage"
-          class="fullscreen-comparison"
-          :class="{ 'fullscreen-mode': isFullscreen }"
-        >
+        <div v-if="currentImage" class="fullscreen-comparison" :class="{ 'fullscreen-mode': isFullscreen }">
           <div
-            class="comparison-container-fullscreen"
-            :style="{
+            class="comparison-container-fullscreen" :style="{
               cursor: imageZoom > 1 ? 'move' : 'default',
-            }"
-            @wheel="handleWheel"
-            @mousedown="handleImageMouseDown"
+            }" @wheel="handleWheel" @mousedown="handleImageMouseDown"
           >
             <!-- 调试信息 -->
-            <div
-              v-if="!currentImage.originalUrl || !currentImage.compressedUrl"
-              class="debug-info"
-            >
+            <div v-if="!currentImage.originalUrl || !currentImage.compressedUrl" class="debug-info">
               <p>调试信息:</p>
               <p>
                 originalUrl:
@@ -2171,55 +2103,31 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
             <!-- 主要的图片对比组件 -->
             <img-comparison-slider
               v-if="currentImage.originalUrl && currentImage.compressedUrl"
-              class="comparison-slider-fullscreen"
-              value="50"
+              class="comparison-slider-fullscreen" value="50"
             >
               <!-- eslint-disable -->
-              <img
-                slot="first"
-                :src="currentImage.originalUrl"
-                alt="Original Image"
-                class="comparison-image-fullscreen"
+              <img slot="first" :src="currentImage.originalUrl" alt="Original Image" class="comparison-image-fullscreen"
                 :style="{
                   transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
                   transformOrigin: 'center center',
-                }"
-                loading="eager"
-                decoding="sync"
-                @load="handleImageLoad('original')"
-                @error="console.error('原图加载失败')"
-              />
-              <img
-                slot="second"
-                :src="currentImage.compressedUrl"
-                alt="Compressed Image"
-                class="comparison-image-fullscreen"
-                :style="{
+                }" loading="eager" decoding="sync" @load="handleImageLoad('original')"
+                @error="console.error('原图加载失败')" />
+              <img slot="second" :src="currentImage.compressedUrl" alt="Compressed Image"
+                class="comparison-image-fullscreen" :style="{
                   transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
                   transformOrigin: 'center center',
-                }"
-                loading="eager"
-                decoding="sync"
-                @load="handleImageLoad('compressed')"
-                @error="console.error('压缩图加载失败')"
-              />
+                }" loading="eager" decoding="sync" @load="handleImageLoad('compressed')"
+                @error="console.error('压缩图加载失败')" />
               <!-- eslint-enable -->
             </img-comparison-slider>
 
             <!-- 仅显示原图（压缩中或出错时） -->
-            <div
-              v-else-if="currentImage.originalUrl"
-              class="single-image-preview"
-            >
+            <div v-else-if="currentImage.originalUrl" class="single-image-preview">
               <img
-                :src="currentImage.originalUrl"
-                :alt="currentImage.file.name"
-                class="single-image"
-                :style="{
+                :src="currentImage.originalUrl" :alt="currentImage.file.name" class="single-image" :style="{
                   transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
                   transformOrigin: 'center center',
-                }"
-                @load="handleImageLoad('original')"
+                }" @load="handleImageLoad('original')"
               >
               <div v-if="currentImage.isCompressing" class="preview-overlay">
                 <el-icon class="is-loading" size="30px">
@@ -2229,10 +2137,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   Compressing...
                 </div>
               </div>
-              <div
-                v-if="currentImage.compressionError"
-                class="preview-overlay error"
-              >
+              <div v-if="currentImage.compressionError" class="preview-overlay error">
                 <div class="overlay-text">
                   Compression Error
                 </div>
@@ -2244,8 +2149,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
             <!-- 图片信息覆盖层 -->
             <div
-              class="image-overlay-info"
-              :class="{
+              class="image-overlay-info" :class="{
                 'mobile-dragging': isMobileDragging,
                 'pc-dragging': isPCDragging,
               }"
@@ -2255,40 +2159,29 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   {{ currentImage.file.name }}
                 </div>
                 <div class="image-controls">
-                  <el-button
-                    circle
-                    size="small"
-                    :disabled="imageZoom <= 0.1"
-                    title="缩小 (-)"
-                    @click="zoomOut"
-                  >
-                    <el-icon><ZoomOut /></el-icon>
+                  <el-button circle size="small" :disabled="imageZoom <= 0.1" title="缩小 (-)" @click="zoomOut">
+                    <el-icon>
+                      <ZoomOut />
+                    </el-icon>
                   </el-button>
                   <span class="zoom-info">{{ Math.round(imageZoom * 100) }}%</span>
-                  <el-button
-                    circle
-                    size="small"
-                    :disabled="imageZoom >= 5"
-                    title="放大 (+)"
-                    @click="zoomIn"
-                  >
-                    <el-icon><ZoomIn /></el-icon>
+                  <el-button circle size="small" :disabled="imageZoom >= 5" title="放大 (+)" @click="zoomIn">
+                    <el-icon>
+                      <ZoomIn />
+                    </el-icon>
+                  </el-button>
+                  <el-button circle size="small" title="重置缩放 (0)" @click="resetZoom">
+                    <el-icon>
+                      <Aim />
+                    </el-icon>
                   </el-button>
                   <el-button
-                    circle
-                    size="small"
-                    title="重置缩放 (0)"
-                    @click="resetZoom"
-                  >
-                    <el-icon><Aim /></el-icon>
-                  </el-button>
-                  <el-button
-                    circle
-                    size="small"
-                    :title="isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'"
+                    circle size="small" :title="isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'"
                     @click="toggleFullscreen"
                   >
-                    <el-icon><FullScreen /></el-icon>
+                    <el-icon>
+                      <FullScreen />
+                    </el-icon>
                   </el-button>
                 </div>
               </div>
@@ -2300,15 +2193,12 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   → {{ formatFileSize(currentImage.compressedSize) }}
                 </span>
                 <span
-                  v-if="currentImage.compressionRatio"
-                  class="savings"
-                  :class="{
+                  v-if="currentImage.compressionRatio" class="savings" :class="{
                     'savings-negative': currentImage.compressionRatio < 0,
                   }"
                 >
-                  ({{ currentImage.compressionRatio < 0 ? '+' : '-'
-                  }}{{ Math.abs(currentImage.compressionRatio).toFixed(1) }}%)
-                </span>
+                  ({{ currentImage.compressionRatio < 0 ? '+' : '-' }}{{
+                    Math.abs(currentImage.compressionRatio).toFixed(1) }}%) </span>
               </div>
             </div>
           </div>
@@ -2317,26 +2207,18 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
     </main>
 
     <input
-      id="file"
-      ref="fileRef"
-      type="file"
-      accept="image/png,image/jpg,image/jpeg,image/gif,image/webp"
-      multiple
-      hidden
-      @change="handleFileInputChange"
+      id="file" ref="fileRef" type="file" accept="image/png,image/jpg,image/jpeg,image/gif,image/webp" multiple
+      hidden @change="handleFileInputChange"
     >
 
     <!-- 设置面板 -->
-    <el-dialog
-      v-model="showSettingsPanel"
-      title="Settings"
-      width="600px"
-      :close-on-click-modal="false"
-    >
+    <el-dialog v-model="showSettingsPanel" title="Settings" width="600px" :close-on-click-modal="false">
       <div class="settings-content">
         <div class="settings-section">
           <h3 class="settings-title">
-            <el-icon><Key /></el-icon>
+            <el-icon>
+              <Key />
+            </el-icon>
             Tool Configurations
           </h3>
           <p class="settings-description">
@@ -2344,35 +2226,21 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
           </p>
 
           <div class="tool-config-list">
-            <div
-              v-for="(config, index) in tempToolConfigs"
-              :key="index"
-              class="tool-config-item"
-            >
+            <div v-for="(config, index) in tempToolConfigs" :key="index" class="tool-config-item">
               <div class="tool-header">
                 <div class="tool-info">
                   <el-icon class="tool-icon">
                     <Picture />
                   </el-icon>
                   <span class="tool-name">{{ config.name.toUpperCase() }}</span>
-                  <el-tag
-                    :type="config.enabled && config.key ? 'success' : 'info'"
-                    size="small"
-                  >
+                  <el-tag :type="config.enabled && config.key ? 'success' : 'info'" size="small">
                     {{ config.enabled && config.key ? 'Enabled' : 'Disabled' }}
                   </el-tag>
                 </div>
                 <div class="tool-actions">
-                  <el-switch
-                    v-model="config.enabled"
-                    :disabled="!config.key.trim()"
-                  />
+                  <el-switch v-model="config.enabled" :disabled="!config.key.trim()" />
                   <el-button
-                    v-if="tempToolConfigs.length > 1"
-                    type="danger"
-                    size="small"
-                    :icon="Delete"
-                    circle
+                    v-if="tempToolConfigs.length > 1" type="danger" size="small" :icon="Delete" circle
                     @click="removeToolConfig(index)"
                   />
                 </div>
@@ -2381,25 +2249,19 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               <div class="tool-config">
                 <el-form-item label="Tool">
                   <el-select v-model="config.name" placeholder="Select a tool">
-                    <el-option
-                      v-for="tool in availableTools"
-                      :key="tool"
-                      :label="tool.toUpperCase()"
-                      :value="tool"
-                    />
+                    <el-option v-for="tool in availableTools" :key="tool" :label="tool.toUpperCase()" :value="tool" />
                   </el-select>
                 </el-form-item>
 
                 <el-form-item label="API Key">
                   <el-input
-                    v-model="config.key"
-                    type="password"
-                    placeholder="Enter your API key"
-                    show-password
+                    v-model="config.key" type="password" placeholder="Enter your API key" show-password
                     clearable
                   >
                     <template #prepend>
-                      <el-icon><Key /></el-icon>
+                      <el-icon>
+                        <Key />
+                      </el-icon>
                     </template>
                   </el-input>
                 </el-form-item>
@@ -2408,11 +2270,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   <p class="help-text">
                     <strong>TinyPNG API Key:</strong>
                     Get your free API key from
-                    <a
-                      href="https://tinypng.com/developers"
-                      target="_blank"
-                      class="help-link"
-                    >
+                    <a href="https://tinypng.com/developers" target="_blank" class="help-link">
                       TinyPNG Developer Portal
                     </a>
                   </p>
@@ -2433,7 +2291,9 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
         <div class="settings-section">
           <h3 class="settings-title">
-            <el-icon><Setting /></el-icon>
+            <el-icon>
+              <Setting />
+            </el-icon>
             Usage Information
           </h3>
           <div class="usage-info">
@@ -2567,11 +2427,9 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 .bg-circle {
   position: absolute;
   border-radius: 50%;
-  background: linear-gradient(
-    45deg,
-    rgba(255, 255, 255, 0.1),
-    rgba(255, 255, 255, 0.05)
-  );
+  background: linear-gradient(45deg,
+      rgba(255, 255, 255, 0.1),
+      rgba(255, 255, 255, 0.05));
   animation: float 6s ease-in-out infinite;
 }
 
@@ -2600,6 +2458,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 }
 
 @keyframes float {
+
   0%,
   100% {
     transform: translateY(0px) rotate(0deg);
@@ -2621,11 +2480,9 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: linear-gradient(
-    135deg,
-    rgba(102, 126, 234, 0.95),
-    rgba(118, 75, 162, 0.95)
-  );
+  background: linear-gradient(135deg,
+      rgba(102, 126, 234, 0.95),
+      rgba(118, 75, 162, 0.95));
   backdrop-filter: blur(10px);
   display: flex;
   justify-content: center;
@@ -2832,12 +2689,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 .toolbar-divider {
   width: 1px;
   height: 32px;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    rgba(0, 0, 0, 0.1),
-    transparent
-  );
+  background: linear-gradient(to bottom,
+      transparent,
+      rgba(0, 0, 0, 0.1),
+      transparent);
   margin: 0 6px;
 }
 
@@ -2910,12 +2765,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.4),
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.4),
+      transparent);
   transition: left 0.5s;
 }
 
@@ -3028,7 +2881,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
 /* 确保 mini-slider 滑轨可点击 */
 .mini-slider :deep(.el-slider__runway) {
-  height: 8px; /* 增加点击区域高度 */
+  height: 8px;
+  /* 增加点击区域高度 */
   cursor: pointer;
   position: relative;
   z-index: 1;
@@ -3038,7 +2892,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 .mini-slider :deep(.el-slider) {
   position: relative;
   z-index: 1;
-  padding: 10px 0; /* 增加上下padding，扩大点击区域 */
+  padding: 10px 0;
+  /* 增加上下padding，扩大点击区域 */
 }
 
 /* 工具栏滑块按钮样式 */
@@ -3075,7 +2930,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   align-items: center;
   gap: 8px;
   height: 45px;
-  min-width: 230px; /* 防止数字变化时工具栏抖动 */
+  min-width: 230px;
+  /* 防止数字变化时工具栏抖动 */
 }
 
 .size-label {
@@ -3089,11 +2945,9 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   font-size: 11px;
   color: #16a34a;
   font-weight: 700;
-  background: linear-gradient(
-    135deg,
-    rgba(34, 197, 94, 0.1),
-    rgba(34, 197, 94, 0.2)
-  );
+  background: linear-gradient(135deg,
+      rgba(34, 197, 94, 0.1),
+      rgba(34, 197, 94, 0.2));
   padding: 4px 8px;
   border-radius: 12px;
   border: 1px solid rgba(34, 197, 94, 0.2);
@@ -3104,11 +2958,9 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
 .saved-mini.saved-negative {
   color: #dc2626;
-  background: linear-gradient(
-    135deg,
-    rgba(220, 38, 38, 0.1),
-    rgba(220, 38, 38, 0.2)
-  );
+  background: linear-gradient(135deg,
+      rgba(220, 38, 38, 0.1),
+      rgba(220, 38, 38, 0.2));
   border: 1px solid rgba(220, 38, 38, 0.2);
   box-shadow: 0 2px 4px rgba(220, 38, 38, 0.1);
 }
@@ -3202,12 +3054,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.3) 50%,
-    transparent 100%
-  );
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.3) 50%,
+      transparent 100%);
   animation: shimmer 2s infinite;
 }
 
@@ -3215,6 +3065,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   0% {
     transform: translateX(-100%);
   }
+
   100% {
     transform: translateX(100%);
   }
@@ -3313,12 +3164,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.2),
-    transparent
-  );
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent);
   transition: left 0.6s;
 }
 
@@ -3414,11 +3263,13 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 /* PC端样式优化 - 避免滚动条 */
 @media (min-width: 769px) {
   .app-container {
-    overflow-y: hidden; /* PC端完全禁用滚动 */
+    overflow-y: hidden;
+    /* PC端完全禁用滚动 */
   }
 
   .header-section {
-    flex-shrink: 0; /* 确保header不会被压缩 */
+    flex-shrink: 0;
+    /* 确保header不会被压缩 */
     height: auto;
     min-height: 120px;
   }
@@ -3445,6 +3296,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
 /* 小屏幕下隐藏操作按钮文字 - 仅PC端 */
 @media (max-width: 1180px) and (min-width: 769px) {
+
   .add-btn .btn-text,
   .delete-btn .btn-text {
     display: none;
@@ -3456,9 +3308,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
     justify-content: center;
   }
 }
+
 /* 小屏幕下隐藏操作按钮文字 - 仅PC端 */
 @media (max-width: 1030px) and (min-width: 769px) {
-  .exif-label > span {
+  .exif-label>span {
     display: none;
   }
 }
@@ -3619,17 +3472,16 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   .toolbar-divider {
     width: 100%;
     height: 1px;
-    background: linear-gradient(
-      to right,
-      transparent,
-      rgba(0, 0, 0, 0.1),
-      transparent
-    );
+    background: linear-gradient(to right,
+        transparent,
+        rgba(0, 0, 0, 0.1),
+        transparent);
     margin: 0;
   }
 
   .stats-info {
-    min-width: 220px; /* 移动端使用较小的最小宽度 */
+    min-width: 220px;
+    /* 移动端使用较小的最小宽度 */
     justify-content: center;
   }
 
@@ -3674,6 +3526,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
     height: 300px;
     display: flex;
   }
+
   .comparison-container-fullscreen {
     max-height: 70vh;
     display: flex;
@@ -4066,7 +3919,8 @@ img-comparison-slider img {
   width: fit-content;
   display: flex;
   cursor: pointer;
-  z-index: 3; /* 确保按钮在最上层 */
+  z-index: 3;
+  /* 确保按钮在最上层 */
 }
 
 .image-quality-slider {
@@ -4257,7 +4111,7 @@ img-comparison-slider img {
   width: 100vw;
   height: 100vh;
   background: rgba(0, 0, 0, 0.95);
-  z-index: 120;
+  z-index: 140;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4377,7 +4231,7 @@ img-comparison-slider img {
   padding: 8px 16px;
   border-radius: 4px;
   font-size: 12px;
-  z-index: 122;
+  z-index: 141;
   opacity: 0;
   animation: fadeInOut 4s ease-in-out;
 }
@@ -4386,12 +4240,15 @@ img-comparison-slider img {
   0% {
     opacity: 0;
   }
+
   10% {
     opacity: 1;
   }
+
   90% {
     opacity: 1;
   }
+
   100% {
     opacity: 0;
   }
