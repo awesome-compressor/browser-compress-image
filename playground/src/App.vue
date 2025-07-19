@@ -32,6 +32,30 @@ import 'img-comparison-slider/dist/styles.css'
 // 导入 img-comparison-slider
 import('img-comparison-slider')
 
+import { ref, onMounted, onUnmounted } from 'vue'
+
+const fps = ref(0)
+let frameCount = 0
+let lastFpsUpdate = performance.now()
+
+function updateFps() {
+  frameCount++
+  const now = performance.now()
+  if (now - lastFpsUpdate >= 1000) {
+    fps.value = frameCount
+    frameCount = 0
+    lastFpsUpdate = now
+  }
+  requestAnimationFrame(updateFps)
+}
+
+onMounted(() => {
+  requestAnimationFrame(updateFps)
+})
+onUnmounted(() => {
+  // nothing needed for fps
+})
+
 // 单个图片的状态接口
 interface ImageItem {
   id: string
@@ -1736,6 +1760,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
         :class="{ 'memory-high': compressionStats.memoryUsage > 80 }"
       >
         RAM: {{ performanceInfo.memoryAbsolute }}MB
+        <br />
+        FPS: {{ fps }}
       </div>
       <div v-if="compressionStats.isWorkerSupported" class="worker-indicator">
         ⚡ Worker
