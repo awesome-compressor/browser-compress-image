@@ -1,18 +1,32 @@
 <script setup lang="ts">
 import {
+  // @ts-ignore
   Aim,
+  // @ts-ignore
   CloseBold,
+  // @ts-ignore
   Delete,
+  // @ts-ignore
   Download,
+  // @ts-ignore
   FolderOpened,
+  // @ts-ignore
   FullScreen,
+  // @ts-ignore
   Key,
+  // @ts-ignore
   Loading,
+  // @ts-ignore
   Picture,
+  // @ts-ignore
   Plus,
+  // @ts-ignore
   Setting,
+  // @ts-ignore
   Upload,
+  // @ts-ignore
   ZoomIn,
+  // @ts-ignore
   ZoomOut,
 } from '@element-plus/icons-vue'
 import GitForkVue from '@simon_he/git-fork-vue'
