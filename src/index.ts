@@ -22,6 +22,32 @@ export {
   ToolRegistry,
 } from './compressWithTools'
 
+// Enhanced format conversion with strategy comparison
+export {
+  analyzeFormatConversion,
+  type BatchConvertOptions,
+  type ConversionComparisonResult,
+  convertCompressedToFormats,
+  type EnhancedConvertResult,
+  FormatConverter,
+  formatConverter,
+  getOptimalFormats,
+} from './formatConverter'
+
+// Image format conversion
+export {
+  convertCompressedImage,
+  convertImage,
+  type ConvertOptions,
+  type ConvertResult,
+  convertToAllFormats,
+  convertWithCompressionComparison,
+  type ConvertWithCompressionResult,
+  getSupportedFormats,
+  isSupportedFormat,
+  type SupportedConvertFormat,
+} from './imageConvert'
+
 // 按需导入的工具和注册函数
 export * from './tools'
 
@@ -63,17 +89,3 @@ export {
   type MemoryStats,
   type MemoryThresholds,
 } from './utils/memoryManager'
-
-// Image format conversion
-export {
-  convertImage,
-  convertToAllFormats,
-  convertCompressedImage,
-  convertWithCompressionComparison,
-  isSupportedFormat,
-  getSupportedFormats,
-  type ConvertOptions,
-  type ConvertResult,
-  type ConvertWithCompressionResult,
-  type SupportedConvertFormat,
-} from './imageConvert'
