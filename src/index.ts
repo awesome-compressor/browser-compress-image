@@ -63,3 +63,17 @@ export {
   type MemoryStats,
   type MemoryThresholds,
 } from './utils/memoryManager'
+
+// Image format conversion
+export {
+  convertImage,
+  convertToAllFormats,
+  convertCompressedImage,
+  convertWithCompressionComparison,
+  isSupportedFormat,
+  getSupportedFormats,
+  type ConvertOptions,
+  type ConvertResult,
+  type ConvertWithCompressionResult,
+  type SupportedConvertFormat,
+} from './imageConvert'
