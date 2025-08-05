@@ -34,6 +34,7 @@ import { ElMessage } from 'element-plus'
 import JSZip from 'jszip'
 import { download } from 'lazy-js-utils'
 import { h, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   compressEnhanced,
   compressionQueue,
@@ -43,13 +44,14 @@ import {
   getOptimalFormats,
 } from '../../../src'
 import { debounce } from '../debounce'
-import FormatConverter from '../components/FormatConverter.vue'
+
 
 import 'img-comparison-slider/dist/styles.css'
 
 // 导入 img-comparison-slider
 import('img-comparison-slider')
 
+const router = useRouter()
 const fps = ref(0)
 let frameCount = 0
 let lastFpsUpdate = performance.now()
@@ -130,9 +132,7 @@ const globalQualityDragging = ref(0.6) // 拖动过程中的临时质量值
 // 设置面板相关状态
 const showSettingsPanel = ref(false)
 
-// 格式转换相关状态
-const showFormatConverter = ref(false)
-const currentConvertImage = ref<ImageItem | null>(null)
+
 
 // 性能统计信息
 const compressionStats = ref<CompressionStatsInfo>({
@@ -224,9 +224,19 @@ async function handlePendingConversionFiles() {
     // 创建File对象并添加到压缩列表
     for (const fileData of pendingFiles) {
       try {
-        // 从URL获取文件内容
-        const response = await fetch(fileData.url)
-        const blob = await response.blob()
+        // 从base64数据创建blob
+        const base64Data = fileData.base64Data || fileData.url // 兼容旧格式
+        let blob: Blob
+        
+        if (base64Data.startsWith('data:')) {
+          // 处理base64数据
+          const response = await fetch(base64Data)
+          blob = await response.blob()
+        } else {
+          // 兼容旧的URL格式（虽然可能失效）
+          const response = await fetch(base64Data)
+          blob = await response.blob()
+        }
         
         // 创建File对象
         const file = new File([blob], fileData.name, {
@@ -1370,8 +1380,8 @@ async function handlePreserveExifChange() {
   }
 }
 
-// 打开格式转换器
-function openFormatConverter(item: ImageItem) {
+// 发送到格式转换页面
+async function openFormatConverter(item: ImageItem) {
   if (!item.compressedUrl && !item.compressionError) {
     ElMessage({
       message: '请先等待图片压缩完成后再进行格式转换',
@@ -1380,56 +1390,69 @@ function openFormatConverter(item: ImageItem) {
     return
   }
 
-  currentConvertImage.value = {
-    ...item,
-    // 如果有压缩结果，构建 compressedResults 对象以支持从压缩结果转换
-    compressedResults: item.compressedUrl ? {
-      bestResult: item.compressedUrl,
-      bestTool: 'enhanced',
-      allResults: [{
-        tool: 'enhanced',
-        result: item.compressedUrl,
-        originalSize: item.originalSize,
-        compressedSize: item.compressedSize || 0,
-        compressionRatio: item.compressionRatio || 0,
-        duration: 0,
-        success: true,
-      }],
-      totalDuration: 0,
-    } : undefined
-  }
-  
-  showFormatConverter.value = true
-  
-  console.log(`Opening format converter for: ${item.file.name}`)
-  
-  const supportedFormats = getOptimalFormats(item.file)
-  
-  if (supportedFormats.length === 0) {
+  if (!item.compressedUrl) {
     ElMessage({
-      message: `${item.file.name} 的格式不支持转换`,
+      message: '没有可用的压缩结果进行转换',
       type: 'warning',
     })
     return
   }
 
-  ElMessage({
-    message: h('div', [
-      h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, 
-        `正在打开 ${item.file.name} 的格式转换器`),
-      h('div', { style: 'font-size: 13px; color: #6366f1;' }, 
-        `支持转换格式: ${supportedFormats.map((f: string) => f.toUpperCase()).join(', ')}`)
-    ]),
-    type: 'info',
-    duration: 3000,
-  })
+  try {
+    // 从压缩结果获取blob数据
+    const response = await fetch(item.compressedUrl)
+    const blob = await response.blob()
+    
+    // 将blob转换为base64字符串，这样在页面间传递不会失效
+    const base64Data = await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.readAsDataURL(blob)
+    })
+
+    // 将文件信息存储到sessionStorage，传递给转换页面
+    const fileData = {
+      name: item.file.name,
+      size: blob.size,
+      type: item.file.type,
+      lastModified: item.file.lastModified,
+      base64Data: base64Data, // 使用base64数据而不是URL
+      source: 'compression', // 标记来源为压缩
+      originalSize: item.originalSize,
+      compressedSize: item.compressedSize,
+      compressionRatio: item.compressionRatio
+    }
+
+    // 获取已存储的文件列表
+    const existingFiles = JSON.parse(sessionStorage.getItem('pendingConversionFiles') || '[]')
+    existingFiles.push(fileData)
+    sessionStorage.setItem('pendingConversionFiles', JSON.stringify(existingFiles))
+
+    ElMessage({
+      message: h('div', [
+        h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, 
+          `正在发送 ${item.file.name} 到格式转换`),
+        h('div', { style: 'font-size: 13px; color: #059669;' }, 
+          '即将跳转到转换页面...')
+      ]),
+      type: 'success',
+      duration: 2000
+    })
+
+    // 跳转到转换页面
+    setTimeout(() => {
+      router.push('/convert')
+    }, 500)
+
+  } catch (error) {
+    ElMessage({
+      message: `发送失败: ${error instanceof Error ? error.message : '未知错误'}`,
+      type: 'error'
+    })
+  }
 }
 
-// 关闭格式转换器
-function closeFormatConverter() {
-  showFormatConverter.value = false
-  currentConvertImage.value = null
-}
+
 
 // 检查图片是否支持格式转换
 function canConvertFormat(item: ImageItem): boolean {
@@ -2661,13 +2684,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       </template>
     </el-dialog>
 
-    <!-- 格式转换器 -->
-    <FormatConverter
-      v-if="currentConvertImage"
-      v-model:visible="showFormatConverter"
-      :image-item="currentConvertImage"
-      @close="closeFormatConverter"
-    />
+
   </div>
 </template>
 

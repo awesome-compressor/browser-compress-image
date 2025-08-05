@@ -24,8 +24,6 @@ import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   convertImage,
-  convertWithCompressionComparison,
-  getSupportedFormats,
   isSupportedFormat,
 } from '../../../src/imageConvert'
 
@@ -56,7 +54,6 @@ const router = useRouter()
 // 转换配置
 const convertQuality = ref(0.9) // 转换质量
 const targetFormat = ref<SupportedConvertFormat>('webp') // 目标格式
-const compareStrategies = ref(false) // 是否比较压缩策略
 
 // 图片列表状态
 const imageItems = ref<ConvertItem[]>([])
@@ -240,53 +237,32 @@ async function convertImageItem(item: ConvertItem) {
       type: 'blob',
     }
 
-    if (compareStrategies.value) {
-      // 使用压缩策略比较
-      const result = await convertWithCompressionComparison(
-        item.file,
-        targetFormat.value,
-        options,
-      )
+    // 只转换为用户选择的目标格式
+    try {
+      const result = await convertImage(item.file, targetFormat.value, options)
 
+      if (result.success && result.result instanceof Blob) {
+        item.convertResults = [{
+          format: targetFormat.value,
+          convertedUrl: URL.createObjectURL(result.result),
+          convertedSize: result.convertedSize,
+          success: true,
+        }]
+      }
+      else {
+        item.convertResults = [{
+          format: targetFormat.value,
+          success: false,
+          error: result.error || 'Conversion failed',
+        }]
+      }
+    }
+    catch (error) {
       item.convertResults = [{
         format: targetFormat.value,
-        convertedUrl: URL.createObjectURL(result.bestResult as Blob),
-        convertedSize: (result.bestResult as Blob).size,
-        success: true,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
       }]
-    }
-    else {
-      // 转换为所有支持的格式
-      const availableFormats = getSupportedFormats(item.file.type)
-
-      for (const format of availableFormats) {
-        try {
-          const result = await convertImage(item.file, format, options)
-
-          if (result.success && result.result instanceof Blob) {
-            item.convertResults.push({
-              format,
-              convertedUrl: URL.createObjectURL(result.result),
-              convertedSize: result.convertedSize,
-              success: true,
-            })
-          }
-          else {
-            item.convertResults.push({
-              format,
-              success: false,
-              error: result.error || 'Conversion failed',
-            })
-          }
-        }
-        catch (error) {
-          item.convertResults.push({
-            format,
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          })
-        }
-      }
     }
   }
   catch (error) {
@@ -385,21 +361,25 @@ async function sendToCompress(item: ConvertItem, result: any) {
   }
 
   try {
-    // 从转换结果创建新的File对象
+    // 从转换结果获取blob数据
     const response = await fetch(result.convertedUrl)
     const blob = await response.blob()
     const fileName = `${item.file.name.replace(/\.[^/.]+$/, '')}.${result.format}`
-    const newFile = new File([blob], fileName, {
-      type: `image/${result.format === 'jpg' ? 'jpeg' : result.format}`
+    
+    // 将blob转换为base64字符串
+    const base64Data = await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.readAsDataURL(blob)
     })
 
     // 将文件信息存储到sessionStorage，传递给压缩页面
     const fileData = {
-      name: newFile.name,
-      size: newFile.size,
-      type: newFile.type,
-      lastModified: newFile.lastModified,
-      url: result.convertedUrl,
+      name: fileName,
+      size: blob.size,
+      type: `image/${result.format === 'jpg' ? 'jpeg' : result.format}`,
+      lastModified: Date.now(),
+      base64Data: base64Data, // 使用base64数据而不是URL
       source: 'conversion', // 标记来源为转换
       originalFileName: item.file.name,
       convertedFormat: result.format
@@ -449,9 +429,78 @@ function setCurrentImage(index: number) {
   currentImageIndex.value = index
 }
 
+// 处理从压缩页面传递过来的文件
+async function handlePendingCompressionFiles() {
+  try {
+    const pendingFilesData = sessionStorage.getItem('pendingConversionFiles')
+    if (!pendingFilesData) return
+
+    const pendingFiles = JSON.parse(pendingFilesData)
+    if (!Array.isArray(pendingFiles) || pendingFiles.length === 0) return
+
+    console.log(`Found ${pendingFiles.length} files from compression page`)
+
+    // 清除sessionStorage
+    sessionStorage.removeItem('pendingConversionFiles')
+
+    // 创建File对象并添加到转换列表
+    for (const fileData of pendingFiles) {
+      try {
+        // 从base64数据创建blob
+        const base64Data = fileData.base64Data || fileData.url // 兼容旧格式
+        let blob: Blob
+        
+        if (base64Data.startsWith('data:')) {
+          // 处理base64数据
+          const response = await fetch(base64Data)
+          blob = await response.blob()
+        } else {
+          // 兼容旧的URL格式（虽然可能失效）
+          const response = await fetch(base64Data)
+          blob = await response.blob()
+        }
+        
+        // 创建File对象
+        const file = new File([blob], fileData.name, {
+          type: fileData.type,
+          lastModified: fileData.lastModified
+        })
+
+        // 添加到图片列表
+        await addNewImages([file])
+
+        // 显示成功消息
+        ElMessage({
+          message: h('div', [
+            h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, 
+              `已接收压缩结果: ${fileData.name}`),
+            h('div', { style: 'font-size: 13px; color: #6366f1;' }, 
+              `原始大小: ${formatFileSize(fileData.originalSize)} → 压缩后: ${formatFileSize(fileData.compressedSize || 0)}`)
+          ]),
+          type: 'success',
+          duration: 3000
+        })
+
+      } catch (error) {
+        console.error(`Failed to process file ${fileData.name}:`, error)
+        ElMessage({
+          message: `处理文件 ${fileData.name} 失败`,
+          type: 'error'
+        })
+      }
+    }
+
+  } catch (error) {
+    console.error('Failed to handle pending compression files:', error)
+  }
+}
+
 // 生命周期钩子
-onMounted(() => {
+onMounted(async () => {
   console.log('Image convert page mounted')
+
+  // 处理从压缩页面传递过来的文件
+  await handlePendingCompressionFiles()
 
   // 添加拖拽事件监听
   document.addEventListener('dragover', handleDragOver)
@@ -552,11 +601,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="setting-group">
-            <el-checkbox v-model="compareStrategies">
-              Compare compression strategies
-            </el-checkbox>
-          </div>
+
         </div>
       </section>
 
