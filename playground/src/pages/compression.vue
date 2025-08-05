@@ -207,6 +207,62 @@ function loadSettings() {
   globalQualityDragging.value = globalQuality.value
 }
 
+// 处理从转换页面传递过来的文件
+async function handlePendingConversionFiles() {
+  try {
+    const pendingFilesData = sessionStorage.getItem('pendingCompressionFiles')
+    if (!pendingFilesData) return
+
+    const pendingFiles = JSON.parse(pendingFilesData)
+    if (!Array.isArray(pendingFiles) || pendingFiles.length === 0) return
+
+    console.log(`Found ${pendingFiles.length} files from conversion page`)
+
+    // 清除sessionStorage
+    sessionStorage.removeItem('pendingCompressionFiles')
+
+    // 创建File对象并添加到压缩列表
+    for (const fileData of pendingFiles) {
+      try {
+        // 从URL获取文件内容
+        const response = await fetch(fileData.url)
+        const blob = await response.blob()
+        
+        // 创建File对象
+        const file = new File([blob], fileData.name, {
+          type: fileData.type,
+          lastModified: fileData.lastModified
+        })
+
+        // 添加到图片列表
+        await addNewImages([file])
+
+        // 显示成功消息
+        ElMessage({
+          message: h('div', [
+            h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, 
+              `已接收转换结果: ${fileData.name}`),
+            h('div', { style: 'font-size: 13px; color: #6366f1;' }, 
+              `从 ${fileData.originalFileName} 转换为 ${fileData.convertedFormat.toUpperCase()} 格式`)
+          ]),
+          type: 'success',
+          duration: 3000
+        })
+
+      } catch (error) {
+        console.error(`Failed to process file ${fileData.name}:`, error)
+        ElMessage({
+          message: `处理文件 ${fileData.name} 失败`,
+          type: 'error'
+        })
+      }
+    }
+
+  } catch (error) {
+    console.error('Failed to handle pending conversion files:', error)
+  }
+}
+
 // 保存临时配置到实际配置并保存到 localStorage（显示成功提示）
 function saveSettings() {
   try {
@@ -512,6 +568,9 @@ onMounted(async () => {
 
   // 加载保存的设置
   loadSettings()
+
+  // 处理从转换页面传递过来的文件
+  await handlePendingConversionFiles()
 
   // 添加键盘事件监听
   document.addEventListener('keydown', handleKeydown)

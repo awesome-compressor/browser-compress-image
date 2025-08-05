@@ -15,18 +15,18 @@ import {
   Refresh,
   // @ts-expect-error
   Upload,
+  // @ts-expect-error
+  ArrowRight,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { download } from 'lazy-js-utils'
 import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   convertImage,
-
-  convertToAllFormats,
   convertWithCompressionComparison,
   getSupportedFormats,
   isSupportedFormat,
-
 } from '../../../src/imageConvert'
 
 // 图片转换项接口
@@ -51,6 +51,7 @@ const loading = ref(false)
 const fileRef = ref()
 const isDragOver = ref(false)
 const currentImageIndex = ref(0)
+const router = useRouter()
 
 // 转换配置
 const convertQuality = ref(0.9) // 转换质量
@@ -373,6 +374,66 @@ async function downloadConvertedImage(item: ConvertItem, result: any) {
   }
 }
 
+// 发送转换结果到压缩页面
+async function sendToCompress(item: ConvertItem, result: any) {
+  if (!result.convertedUrl || !result.success) {
+    ElMessage({
+      message: '无效的转换结果',
+      type: 'warning'
+    })
+    return
+  }
+
+  try {
+    // 从转换结果创建新的File对象
+    const response = await fetch(result.convertedUrl)
+    const blob = await response.blob()
+    const fileName = `${item.file.name.replace(/\.[^/.]+$/, '')}.${result.format}`
+    const newFile = new File([blob], fileName, {
+      type: `image/${result.format === 'jpg' ? 'jpeg' : result.format}`
+    })
+
+    // 将文件信息存储到sessionStorage，传递给压缩页面
+    const fileData = {
+      name: newFile.name,
+      size: newFile.size,
+      type: newFile.type,
+      lastModified: newFile.lastModified,
+      url: result.convertedUrl,
+      source: 'conversion', // 标记来源为转换
+      originalFileName: item.file.name,
+      convertedFormat: result.format
+    }
+
+    // 获取已存储的文件列表
+    const existingFiles = JSON.parse(sessionStorage.getItem('pendingCompressionFiles') || '[]')
+    existingFiles.push(fileData)
+    sessionStorage.setItem('pendingCompressionFiles', JSON.stringify(existingFiles))
+
+    ElMessage({
+      message: h('div', [
+        h('div', { style: 'font-weight: 600; margin-bottom: 4px;' }, 
+          `正在发送 ${fileName} 到压缩工作台`),
+        h('div', { style: 'font-size: 13px; color: #059669;' }, 
+          '即将跳转到压缩页面...')
+      ]),
+      type: 'success',
+      duration: 2000
+    })
+
+    // 跳转到压缩页面
+    setTimeout(() => {
+      router.push('/compression')
+    }, 500)
+
+  } catch (error) {
+    ElMessage({
+      message: `发送失败: ${error instanceof Error ? error.message : '未知错误'}`,
+      type: 'error'
+    })
+  }
+}
+
 // 格式化文件大小
 function formatFileSize(bytes: number): string {
   if (bytes === 0)
@@ -603,9 +664,17 @@ onBeforeUnmount(() => {
                       <span class="result-size">{{ formatFileSize(result.convertedSize || 0) }}</span>
                       <button
                         class="download-btn-small"
+                        title="下载转换结果"
                         @click.stop="downloadConvertedImage(item, result)"
                       >
                         <el-icon><Download /></el-icon>
+                      </button>
+                      <button
+                        class="compress-btn-small"
+                        title="发送到压缩工作台"
+                        @click.stop="sendToCompress(item, result)"
+                      >
+                        <el-icon><ArrowRight /></el-icon>
                       </button>
                     </div>
                     <div v-else class="result-error">
@@ -1231,6 +1300,25 @@ onBeforeUnmount(() => {
 
 .download-btn-small:hover {
   background: #059669;
+  transform: scale(1.1);
+}
+
+.compress-btn-small {
+  background: #6366f1;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 4px;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  transition: all 0.2s ease;
+  margin-left: 4px;
+}
+
+.compress-btn-small:hover {
+  background: #4f46e5;
   transform: scale(1.1);
 }
 
