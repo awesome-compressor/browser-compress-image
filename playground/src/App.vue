@@ -46,7 +46,7 @@ import 'img-comparison-slider/dist/styles.css'
 // 导入 img-comparison-slider
 import('img-comparison-slider')
 
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, triggerRef } from 'vue'
 import { debounce } from './utils'
 
 const fps = ref(0)
@@ -259,6 +259,12 @@ async function handleGlobalQualitySliderChange(value: number) {
 
 // 图片列表状态
 const imageItems = ref<ImageItem[]>([])
+
+// 辅助函数：更新图片项属性并触发响应式更新
+function updateImageItem(item: ImageItem, updates: Partial<ImageItem>) {
+  Object.assign(item, updates)
+  triggerRef(imageItems)
+}
 
 // 修改全局质量变化处理函数 - 只更新未被单独修改过的图片
 async function handleGlobalQualityChange(newGlobalQuality: number) {
@@ -1109,11 +1115,13 @@ async function addNewImages(files: File[]) {
         })
 
         // 更新单个图片的压缩结果
-        item.compressedUrl = URL.createObjectURL(result)
-        item.compressedSize = result.size
-        item.compressionRatio =
-          ((item.originalSize - result.size) / item.originalSize) * 100
-        item.isCompressing = false
+        updateImageItem(item, {
+          compressedUrl: URL.createObjectURL(result),
+          compressedSize: result.size,
+          compressionRatio: ((item.originalSize - result.size) / item.originalSize) * 100,
+          isCompressing: false
+        })
+        
         successfulCount++
 
         // 实时更新进度
@@ -1146,9 +1154,10 @@ async function addNewImages(files: File[]) {
 
     // 设置错误状态
     newItems.forEach((item) => {
-      item.isCompressing = false
-      item.compressionError =
-        error instanceof Error ? error.message : 'Batch compression failed'
+      updateImageItem(item, {
+        isCompressing: false,
+        compressionError: error instanceof Error ? error.message : 'Batch compression failed'
+      })
     })
 
     ElMessage({
@@ -1197,10 +1206,14 @@ async function compressImage(item: ImageItem): Promise<void> {
       URL.revokeObjectURL(item.compressedUrl)
     }
 
-    item.compressedUrl = URL.createObjectURL(compressedBlob)
-    item.compressedSize = compressedBlob.size
-    item.compressionRatio =
-      ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
+    updateImageItem(item, {
+      compressedUrl: URL.createObjectURL(compressedBlob),
+      compressedSize: compressedBlob.size,
+      compressionRatio: ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
+    })
+    
+    // 强制触发响应式更新
+    triggerRef(imageItems)
   } catch (error) {
     console.error('Enhanced compression error:', error)
     item.compressionError =
@@ -1513,6 +1526,7 @@ function constrainImagePosition() {
 // 图片加载完成处理
 function handleImageLoad(type: 'original' | 'compressed') {
   console.log(`${type}图加载完成`)
+  console.log(imageItems.value)
   // 重新计算边界，因为图片尺寸可能已经改变
   nextTick(() => {
     constrainImagePosition()
