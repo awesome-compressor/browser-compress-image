@@ -48,6 +48,7 @@ import('img-comparison-slider')
 
 import { ref, onMounted, onUnmounted, triggerRef } from 'vue'
 import { debounce } from './utils'
+import CropPage from './CropPage.vue'
 
 const fps = ref(0)
 let frameCount = 0
@@ -107,6 +108,24 @@ const currentImageIndex = ref(0)
 const isCompressingAll = ref(false)
 const isMobileDragging = ref(false)
 const isPCDragging = ref(false) // PC端拖拽状态 // 移动端拖拽状态
+// 裁剪页面状态
+const showCropPage = ref(false)
+const cropOriginalUrl = ref('')
+const cropCompressedUrl = ref('')
+
+function openCropPage(item: ImageItem) {
+  if (!item.compressedUrl) {
+    ElMessage.warning('Please wait for compression to finish before cropping')
+    return
+  }
+  cropOriginalUrl.value = item.originalUrl
+  cropCompressedUrl.value = item.compressedUrl
+  showCropPage.value = true
+}
+
+function closeCropPage() {
+  showCropPage.value = false
+}
 
 // 压缩进度状态
 const compressionProgress = ref({
@@ -2019,6 +2038,14 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 :src="item.originalUrl"
                 :alt="item.file.name"
               />
+              <div
+                v-if="item.compressedUrl && !item.compressionError"
+                class="crop-hover-btn"
+                title="Crop image"
+                @click.stop="openCropPage(item)"
+              >
+                ✂️
+              </div>
               <div v-if="item.isCompressing" class="compressing-overlay">
                 <el-icon class="is-loading">
                   <Loading />
@@ -2130,6 +2157,14 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 <el-icon>
                   <Download />
                 </el-icon>
+              </button>
+              <button
+                v-if="item.compressedUrl && !item.compressionError"
+                class="action-btn-small crop-single"
+                title="Crop this image"
+                @click.stop="openCropPage(item)"
+              >
+                ✂️
               </button>
               <button
                 class="action-btn-small delete-single"
@@ -2495,6 +2530,16 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
         </div>
       </template>
     </el-dialog>
+    <CropPage
+      v-if="showCropPage"
+      :original-url="cropOriginalUrl"
+      :compressed-url="cropCompressedUrl"
+  :original-name="currentImage?.file.name"
+  :compressed-name="currentImage?.file.name"
+  :original-size="currentImage?.originalSize"
+  :compressed-size="currentImage?.compressedSize"
+      @close="closeCropPage"
+    />
   </div>
 </template>
 
@@ -2505,7 +2550,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   position: relative;
   overflow-x: hidden;
-  min-height: 100vh;
+  height:100%;
   /* 优化滚动性能 */
   -webkit-overflow-scrolling: touch;
   /* 减少重绘 */
@@ -4180,6 +4225,39 @@ img-comparison-slider img {
   font-size: 12px;
   flex: 1;
 }
+
+.action-btn-small.crop-single {
+  color: #4f46e5;
+  border-color: rgba(79,70,229,0.3);
+}
+.action-btn-small.crop-single:hover {
+  background:#eef2ff;
+  border-color: rgba(79,70,229,0.6);
+}
+
+/* Hover crop button on thumbnail */
+.crop-hover-btn {
+  position:absolute;
+  top:6px;
+  right:6px;
+  width:30px;
+  height:30px;
+  border-radius:8px;
+  background:rgba(0,0,0,0.55);
+  backdrop-filter:blur(4px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  font-size:15px;
+  transition:all .25s ease;
+  opacity:0;
+  transform:translateY(-4px) scale(.9);
+  box-shadow:0 2px 6px rgba(0,0,0,.4);
+}
+.image-preview:hover .crop-hover-btn { opacity:1; transform:translateY(0) scale(1); }
+.crop-hover-btn:hover { background:rgba(79,70,229,0.85); box-shadow:0 4px 12px rgba(79,70,229,.5); }
+.crop-hover-btn:active { transform:scale(.9); }
 
 .action-btn-small:hover {
   transform: translateY(-1px);
