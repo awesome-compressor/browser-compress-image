@@ -2,7 +2,7 @@
   "name": "@awesome-compressor/browser-compress-image",
   "type": "module",
   "version": "0.0.3",
-  "packageManager": "pnpm@10.13.1",
+  "packageManager": "pnpm@10.14.0",
   "description": "🚀 A powerful, lightweight browser image compression library with TypeScript support. Compress JPEG, PNG, GIF images with multiple output formats (Blob, File, Base64, ArrayBuffer) and zero dependencies.",
   "author": {
     "name": "Simon He",
@@ -73,14 +73,14 @@
     "gifsicle-wasm-browser": "^1.5.16"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "^4.17.0",
+    "@antfu/eslint-config": "^4.19.0",
     "@sxzz/prettier-config": "^2.2.3",
     "@types/node": "^17.0.45",
     "bumpp": "^7.2.0",
-    "eslint": "^9.31.0",
+    "eslint": "^9.33.0",
     "prettier": "^3.6.2",
     "tsdown": "^0.12.9",
-    "typescript": "^5.8.3",
+    "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
   "prettier": "@sxzz/prettier-config"

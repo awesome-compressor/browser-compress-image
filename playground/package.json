@@ -2,7 +2,7 @@
   "name": "playground",
   "type": "module",
   "private": true,
-  "packageManager": "pnpm@10.13.1",
+  "packageManager": "pnpm@10.14.0",
   "scripts": {
     "build": "vite build",
     "dev": "vite --port 3333 --open",
@@ -11,26 +11,26 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@element-plus/icons-vue": "^2.3.1",
-    "@iconify-json/carbon": "^1.2.10",
+    "@element-plus/icons-vue": "^2.3.2",
+    "@iconify-json/carbon": "^1.2.13",
     "@simon_he/git-fork-vue": "^0.0.18",
     "@vueuse/core": "^8.9.4",
-    "element-plus": "^2.10.4",
+    "cropperjs": "^1.6.2",
+    "element-plus": "^2.10.7",
     "img-comparison-slider": "^8.0.6",
     "jszip": "^3.10.1",
     "lazy-js-utils": "^0.1.47",
     "vivid-typing": "^1.1.47",
-    "vue": "^3.5.17",
-    "vue-router": "^4.5.1",
-    "cropperjs": "^1.6.2"
+    "vue": "^3.5.18",
+    "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@types/node": "^17.0.45",
-    "@vitejs/plugin-vue": "^6.0.0",
+    "@vitejs/plugin-vue": "^6.0.1",
     "@vue/test-utils": "^2.4.6",
     "unplugin-auto-import": "^19.3.0",
     "unplugin-vue-components": "^28.8.0",
-    "vite": "^7.0.4",
+    "vite": "^7.1.2",
     "vite-plugin-pages": "^0.33.1",
     "vue-tsc": "^2.2.12"
   }
