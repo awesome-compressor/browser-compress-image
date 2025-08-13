@@ -1137,10 +1137,11 @@ async function addNewImages(files: File[]) {
         updateImageItem(item, {
           compressedUrl: URL.createObjectURL(result),
           compressedSize: result.size,
-          compressionRatio: ((item.originalSize - result.size) / item.originalSize) * 100,
-          isCompressing: false
+          compressionRatio:
+            ((item.originalSize - result.size) / item.originalSize) * 100,
+          isCompressing: false,
         })
-        
+
         successfulCount++
 
         // 实时更新进度
@@ -1175,7 +1176,8 @@ async function addNewImages(files: File[]) {
     newItems.forEach((item) => {
       updateImageItem(item, {
         isCompressing: false,
-        compressionError: error instanceof Error ? error.message : 'Batch compression failed'
+        compressionError:
+          error instanceof Error ? error.message : 'Batch compression failed',
       })
     })
 
@@ -1228,9 +1230,10 @@ async function compressImage(item: ImageItem): Promise<void> {
     updateImageItem(item, {
       compressedUrl: URL.createObjectURL(compressedBlob),
       compressedSize: compressedBlob.size,
-      compressionRatio: ((item.originalSize - compressedBlob.size) / item.originalSize) * 100
+      compressionRatio:
+        ((item.originalSize - compressedBlob.size) / item.originalSize) * 100,
     })
-    
+
     // 强制触发响应式更新
     triggerRef(imageItems)
   } catch (error) {
@@ -2534,10 +2537,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       v-if="showCropPage"
       :original-url="cropOriginalUrl"
       :compressed-url="cropCompressedUrl"
-  :original-name="currentImage?.file.name"
-  :compressed-name="currentImage?.file.name"
-  :original-size="currentImage?.originalSize"
-  :compressed-size="currentImage?.compressedSize"
+      :original-name="currentImage?.file.name"
+      :compressed-name="currentImage?.file.name"
+      :original-size="currentImage?.originalSize"
+      :compressed-size="currentImage?.compressedSize"
       @close="closeCropPage"
     />
   </div>
@@ -2550,7 +2553,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   position: relative;
   overflow-x: hidden;
-  height:100%;
+  height: 100%;
   /* 优化滚动性能 */
   -webkit-overflow-scrolling: touch;
   /* 减少重绘 */
@@ -3492,13 +3495,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   -webkit-backface-visibility: hidden;
 }
 
-/* PC端样式优化 - 避免滚动条 */
+/* PC端样式优化 */
 @media (min-width: 769px) {
-  .app-container {
-    overflow-y: hidden;
-    /* PC端完全禁用滚动 */
-  }
-
   .header-section {
     flex-shrink: 0;
     /* 确保header不会被压缩 */
@@ -4228,36 +4226,44 @@ img-comparison-slider img {
 
 .action-btn-small.crop-single {
   color: #4f46e5;
-  border-color: rgba(79,70,229,0.3);
+  border-color: rgba(79, 70, 229, 0.3);
 }
 .action-btn-small.crop-single:hover {
-  background:#eef2ff;
-  border-color: rgba(79,70,229,0.6);
+  background: #eef2ff;
+  border-color: rgba(79, 70, 229, 0.6);
 }
 
 /* Hover crop button on thumbnail */
 .crop-hover-btn {
-  position:absolute;
-  top:6px;
-  right:6px;
-  width:30px;
-  height:30px;
-  border-radius:8px;
-  background:rgba(0,0,0,0.55);
-  backdrop-filter:blur(4px);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer;
-  font-size:15px;
-  transition:all .25s ease;
-  opacity:0;
-  transform:translateY(-4px) scale(.9);
-  box-shadow:0 2px 6px rgba(0,0,0,.4);
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 15px;
+  transition: all 0.25s ease;
+  opacity: 0;
+  transform: translateY(-4px) scale(0.9);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
-.image-preview:hover .crop-hover-btn { opacity:1; transform:translateY(0) scale(1); }
-.crop-hover-btn:hover { background:rgba(79,70,229,0.85); box-shadow:0 4px 12px rgba(79,70,229,.5); }
-.crop-hover-btn:active { transform:scale(.9); }
+.image-preview:hover .crop-hover-btn {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.crop-hover-btn:hover {
+  background: rgba(79, 70, 229, 0.85);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.5);
+}
+.crop-hover-btn:active {
+  transform: scale(0.9);
+}
 
 .action-btn-small:hover {
   transform: translateY(-1px);
