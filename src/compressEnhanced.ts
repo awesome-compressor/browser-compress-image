@@ -6,6 +6,8 @@ import type {
 import convertBlobToType from './convertBlobToType'
 import { compressionQueue } from './utils/compressionQueue'
 import { compressionWorkerManager } from './utils/compressionWorker'
+import { preprocessImage } from './utils/preprocessImage'
+import type { PreprocessOptions } from './types'
 
 // Enhanced compression options with queue and worker support
 export interface EnhancedCompressOptions extends CompressOptions {
@@ -32,6 +34,11 @@ export interface EnhancedCompressOptions extends CompressOptions {
    * @default 30000 (30 seconds)
    */
   timeout?: number
+
+  /**
+   * Optional preprocessing before compression (crop/rotate/flip/resize)
+   */
+  preprocess?: PreprocessOptions
 }
 
 /**
@@ -48,6 +55,7 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
     priority,
     timeout = 30000,
     type = 'blob' as T,
+  preprocess,
     ...compressOptions
   } = options
 
@@ -56,10 +64,40 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
     throw new Error('Invalid file input')
   }
 
+  // If preprocessing is requested, apply on main thread first to get an interim Blob
+  let inputForCompression: File | Blob = file
+  if (preprocess) {
+    try {
+      // Map arbitrary file.type to supported union for preprocess output
+      let guessedOutType: 'image/png' | 'image/jpeg' | 'image/webp' = 'image/png'
+      if (preprocess.outputType) {
+        guessedOutType = preprocess.outputType
+      } else if (/jpe?g/i.test(file.type)) {
+        guessedOutType = 'image/jpeg'
+      } else if (/png/i.test(file.type)) {
+        guessedOutType = 'image/png'
+      } else if (/webp/i.test(file.type)) {
+        guessedOutType = 'image/webp'
+      }
+
+      const pre = await preprocessImage(file, {
+        ...preprocess,
+        // Prefer to keep the source mime within supported set; downstream tools can convert if needed
+        outputType: guessedOutType,
+      })
+      inputForCompression = pre.blob
+    } catch (e) {
+      console.warn('Preprocess failed, fallback to original file:', e)
+    }
+  }
+
   // For single file compression, use direct compression if queue is disabled
   if (!useQueue) {
     return (await compressDirectly(
-      file,
+      // if preprocessed, wrap as File to retain name when possible
+      inputForCompression instanceof File
+        ? inputForCompression
+        : new File([inputForCompression], file.name, { type: (inputForCompression as Blob).type }),
       compressOptions,
       useWorker,
       type,
@@ -68,7 +106,9 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
 
   // Use queue for concurrency control
   const compressPromise = compressionQueue.compress(
-    file,
+    inputForCompression instanceof File
+      ? inputForCompression
+      : new File([inputForCompression], file.name, { type: (inputForCompression as Blob).type }),
     {
       ...compressOptions,
       useWorker,

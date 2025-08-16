@@ -87,6 +87,8 @@ interface ImageItem {
   quality: number // 每张图片独立的质量设置
   isQualityCustomized: boolean // 标记图片质量是否被用户单独修改过
   qualityDragging: number // 拖动过程中的临时质量值
+  // 预处理参数（裁剪/旋转/缩放）
+  preprocess?: import('../../src').PreprocessOptions
 }
 
 // 多工具对比结果类型（仅用于 UI 展示）
@@ -125,12 +127,14 @@ const isPCDragging = ref(false) // PC端拖拽状态 // 移动端拖拽状态
 const showCropPage = ref(false)
 const cropOriginalUrl = ref('')
 const cropCompressedUrl = ref('')
+const croppingIndex = ref<number | null>(null)
 
 function openCropPage(item: ImageItem) {
   if (!item.compressedUrl) {
     ElMessage.warning('Please wait for compression to finish before cropping')
     return
   }
+  croppingIndex.value = imageItems.value.findIndex((it) => it.id === item.id)
   cropOriginalUrl.value = item.originalUrl
   cropCompressedUrl.value = item.compressedUrl
   showCropPage.value = true
@@ -138,6 +142,19 @@ function openCropPage(item: ImageItem) {
 
 function closeCropPage() {
   showCropPage.value = false
+  croppingIndex.value = null
+}
+
+// 接收裁剪页面返回的预处理参数并触发重新压缩
+function applyCropPreprocess(preprocess: import('../../src').PreprocessOptions) {
+  if (croppingIndex.value == null) return
+  const idx = croppingIndex.value
+  const item = imageItems.value[idx]
+  item.preprocess = preprocess
+  showCropPage.value = false
+  croppingIndex.value = null
+  // 重新压缩（带预处理）
+  compressImage(item)
 }
 
 // 多工具结果对比面板状态
@@ -1324,6 +1341,7 @@ async function compressImage(item: ImageItem): Promise<void> {
       quality: item.quality, // 直接使用图片的质量设置（已经是0-1范围）
       preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
       toolConfigs: enabledToolConfigs, // 传入工具配置
+  preprocess: item.preprocess, // 预处理：裁剪/旋转/缩放
       useWorker: true, // 启用Worker支持（如果可用）
       useQueue: true, // 启用队列管理
       timeout: getDeviceBasedTimeout(30000), // 设备适配的超时时间
@@ -2665,6 +2683,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       :original-size="currentImage?.originalSize"
       :compressed-size="currentImage?.compressedSize"
       @close="closeCropPage"
+  @apply="applyCropPreprocess"
     />
 
     <!-- 多工具结果对比面板 -->

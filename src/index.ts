@@ -63,3 +63,7 @@ export {
   type MemoryStats,
   type MemoryThresholds,
 } from './utils/memoryManager'
+
+// Image preprocessing
+export { preprocessImage } from './utils/preprocessImage'
+export type { PreprocessOptions, CropRect, ResizeOptions } from './types'

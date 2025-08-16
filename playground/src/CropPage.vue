@@ -4,14 +4,7 @@ import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
 import { ElMessage } from 'element-plus'
 // @ts-ignore
-import {
-  Aim,
-  CloseBold,
-  Download,
-  Refresh,
-  ZoomIn,
-  ZoomOut,
-} from '@element-plus/icons-vue'
+import { Aim, CloseBold, Download, Refresh, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 
 interface Props {
   originalUrl: string
@@ -24,7 +17,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'apply'])
 
 const originalImgRef = ref<HTMLImageElement | null>(null)
 const compressedImgRef = ref<HTMLImageElement | null>(null)
@@ -357,6 +350,31 @@ function close() {
   }
 }
 
+// 生成预处理配置并提交
+function applyAndReturn() {
+  if (!originalCropper.value) {
+    emit('close')
+    return
+  }
+  const c = originalCropper.value
+  const cropData = c.getCropBoxData()
+  const canvasData = c.getCanvasData()
+  const imageData = c.getImageData()
+  // 计算像素坐标
+  const scaleX = imageData.naturalWidth / canvasData.width
+  const scaleY = imageData.naturalHeight / canvasData.height
+  const crop = {
+    x: Math.round((cropData.left - canvasData.left) * scaleX),
+    y: Math.round((cropData.top - canvasData.top) * scaleY),
+    width: Math.round(cropData.width * scaleX),
+    height: Math.round(cropData.height * scaleY),
+  }
+  // 当前实现仅输出裁剪尺寸，缩放由主界面决定；旋转/翻转留空
+  emit('apply', {
+    crop,
+  })
+}
+
 function handleKey(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     if (showRatioDropdown.value) {
@@ -404,8 +422,7 @@ onMounted(() => {
   if (cropPage) {
     // 移动端用 appContainer?.clientHeight - document.querySelector('#app')?.clientHeight
     // pc端用 appContainer?.scrollTop
-    // 判断当前设备类型
-    debugger
+  // 判断当前设备类型
     if (isMobile.value) {
       cropPage.style.top = `${appContainer?.clientHeight! - document.querySelector('#app')?.clientHeight!}px`
     } else {
@@ -565,6 +582,10 @@ onBeforeUnmount(() => {
             <button class="close-btn" @click="close">
               <el-icon><CloseBold /></el-icon>
               <span>关闭</span>
+            </button>
+            <button class="download-btn" title="应用到压缩" @click.stop="applyAndReturn">
+              <el-icon><Aim /></el-icon>
+              <span>应用裁剪</span>
             </button>
           </div>
         </div>
