@@ -67,3 +67,11 @@ export {
 // Image preprocessing
 export { preprocessImage } from './utils/preprocessImage'
 export type { PreprocessOptions, CropRect, ResizeOptions } from './types'
+
+// JSQuash WASM helpers (for PWA warm-up and diagnostics)
+export {
+  ensureWasmLoaded,
+  configureWasmLoading,
+  diagnoseJsquashAvailability,
+  downloadWasmFiles,
+} from './tools/compressWithJsquash'
