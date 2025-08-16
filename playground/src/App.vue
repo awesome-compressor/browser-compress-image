@@ -36,6 +36,7 @@ import { download } from 'lazy-js-utils'
 import { h } from 'vue'
 import {
   compressEnhanced,
+  compress,
   compressionQueue,
   getCompressionStats,
   memoryManager,
@@ -88,6 +89,18 @@ interface ImageItem {
   qualityDragging: number // 拖动过程中的临时质量值
 }
 
+// 多工具对比结果类型（仅用于 UI 展示）
+interface ToolCompareItem {
+  tool: string
+  url?: string
+  blob?: Blob
+  compressedSize: number
+  compressionRatio: number
+  duration: number
+  success: boolean
+  error?: string
+}
+
 // 压缩统计信息接口
 interface CompressionStatsInfo {
   queuePending: number
@@ -125,6 +138,108 @@ function openCropPage(item: ImageItem) {
 
 function closeCropPage() {
   showCropPage.value = false
+}
+
+// 多工具结果对比面板状态
+const showComparePanel = ref(false)
+const compareLoading = ref(false)
+const compareTargetName = ref('')
+const compareBestTool = ref('')
+const compareResults = ref<ToolCompareItem[]>([])
+let compareObjectUrls: string[] = []
+const compareTargetIndex = ref<number>(-1)
+
+async function openComparePanel(item: ImageItem) {
+  // 打开面板并加载数据
+  showComparePanel.value = true
+  compareLoading.value = true
+  compareTargetName.value = item.file.name
+  compareTargetIndex.value = imageItems.value.findIndex(
+    (it) => it.id === item.id,
+  )
+
+  // 清理旧的对象URL
+  cleanupCompareObjectUrls()
+
+  try {
+    // 过滤出启用的工具配置
+    const enabledToolConfigs = toolConfigs.value.filter(
+      (config) => config.enabled && config.key.trim(),
+    )
+
+    // 使用核心 API 获取所有工具结果
+    const all = (await compress(item.file, {
+      quality: item.quality,
+      preserveExif: preserveExif.value,
+      returnAllResults: true,
+      type: 'blob',
+      toolConfigs: enabledToolConfigs,
+    })) as any
+
+    compareBestTool.value = all.bestTool || ''
+
+    // 构建 UI 结果并生成预览 URL
+  compareResults.value = (all.allResults || []).map((r: any) => {
+      let url: string | undefined
+      if (r.success && r.result instanceof Blob) {
+        url = URL.createObjectURL(r.result)
+        compareObjectUrls.push(url)
+      }
+      return {
+        tool: r.tool,
+        url,
+    blob: r.result as Blob | undefined,
+        compressedSize: r.compressedSize,
+        compressionRatio: r.compressionRatio,
+        duration: r.duration,
+        success: r.success,
+        error: r.error,
+      } as ToolCompareItem
+    })
+  } catch (err) {
+    console.error('Compare tools failed:', err)
+    ElMessage.error(
+      err instanceof Error ? err.message : 'Failed to compare tools',
+    )
+  } finally {
+    compareLoading.value = false
+  }
+}
+
+function closeComparePanel() {
+  showComparePanel.value = false
+  // 关闭时清理生成的对象URL，避免内存泄漏
+  cleanupCompareObjectUrls()
+}
+
+function cleanupCompareObjectUrls() {
+  if (compareObjectUrls.length) {
+    compareObjectUrls.forEach((u) => URL.revokeObjectURL(u))
+    compareObjectUrls = []
+  }
+}
+
+// 应用选中的对比结果到当前图片
+function applyCompareResult(r: ToolCompareItem) {
+  if (!r.success || !r.blob) return
+  const idx = compareTargetIndex.value
+  if (idx < 0 || idx >= imageItems.value.length) return
+  const item = imageItems.value[idx]
+
+  // 释放旧的压缩 URL
+  if (item.compressedUrl) {
+    URL.revokeObjectURL(item.compressedUrl)
+  }
+
+  const newUrl = URL.createObjectURL(r.blob)
+  updateImageItem(item, {
+    compressedUrl: newUrl,
+    compressedSize: r.compressedSize,
+    compressionRatio:
+      ((item.originalSize - r.compressedSize) / item.originalSize) * 100,
+  })
+
+  ElMessage.success(`Applied result from ${r.tool}`)
 }
 
 // 压缩进度状态
@@ -2163,6 +2278,14 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               </button>
               <button
                 v-if="item.compressedUrl && !item.compressionError"
+                class="action-btn-small compare-single"
+                title="Compare tools on this image"
+                @click.stop="openComparePanel(item)"
+              >
+                ⚖️
+              </button>
+              <button
+                v-if="item.compressedUrl && !item.compressionError"
                 class="action-btn-small crop-single"
                 title="Crop this image"
                 @click.stop="openCropPage(item)"
@@ -2543,6 +2666,98 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       :compressed-size="currentImage?.compressedSize"
       @close="closeCropPage"
     />
+
+    <!-- 多工具结果对比面板 -->
+    <el-dialog
+      v-model="showComparePanel"
+      :title="`Compare Tools • ${compareTargetName}`"
+      width="720px"
+      :close-on-click-modal="false"
+      @close="closeComparePanel"
+    >
+      <div class="compare-panel">
+        <div v-if="compareLoading" class="compare-loading">
+          <el-icon class="is-loading" size="28px">
+            <Loading />
+          </el-icon>
+          <div>Running tools…</div>
+        </div>
+
+        <template v-else>
+          <div class="compare-legend">
+            <span class="legend-item best">Best</span>
+            <span class="legend-item ok">Success</span>
+            <span class="legend-item fail">Failed</span>
+          </div>
+
+          <div class="compare-list">
+            <div
+              v-for="r in compareResults"
+              :key="r.tool"
+              class="compare-item"
+              :class="{
+                best: r.tool === compareBestTool,
+                fail: !r.success,
+              }"
+            >
+              <div class="compare-head">
+                <div class="tool-name">
+                  <span class="badge">{{ r.tool }}</span>
+                  <el-tag
+                    v-if="r.tool === compareBestTool && r.success"
+                    type="success"
+                    size="small"
+                    effect="dark"
+                  >Best</el-tag>
+                  <el-tag
+                    v-else-if="!r.success"
+                    type="danger"
+                    size="small"
+                    effect="plain"
+                  >Failed</el-tag>
+                </div>
+                <div class="metrics">
+                  <span class="metric">
+                    {{ formatFileSize(r.compressedSize) }}
+                  </span>
+                  <span
+                    class="metric ratio"
+                    :class="{ neg: r.compressionRatio < 0 }"
+                  >
+                    {{ r.compressionRatio < 0 ? '+' : '-' }}{{
+                      Math.abs(r.compressionRatio).toFixed(1)
+                    }}%
+                  </span>
+                  <span class="metric time">{{ r.duration }}ms</span>
+                </div>
+              </div>
+
+              <div class="compare-body">
+                <div v-if="r.success && r.url" class="preview">
+                  <img :src="r.url" alt="preview" />
+                </div>
+                <div v-else class="error-msg">{{ r.error || 'Failed' }}</div>
+              </div>
+
+              <div class="compare-actions">
+                <el-button
+                  v-if="r.success && r.url"
+                  size="small"
+                  type="primary"
+                  @click="applyCompareResult(r)"
+                >Use this result</el-button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="closeComparePanel"> Close </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -3448,6 +3663,121 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 .download-text {
   font-size: 13px;
   font-weight: 600;
+}
+
+/* 对比面板 */
+.compare-panel {
+  min-height: 200px;
+}
+
+.compare-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6b7280;
+}
+
+.compare-legend {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.legend-item {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #374151;
+}
+.legend-item.best {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+}
+.legend-item.fail {
+  background: rgba(239, 68, 68, 0.12);
+  color: #991b1b;
+}
+
+.compare-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.compare-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+}
+.compare-item.best {
+  border-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.15);
+}
+.compare-item.fail {
+  opacity: 0.8;
+}
+.compare-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.tool-name {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.tool-name .badge {
+  font-weight: 700;
+  font-size: 12px;
+  color: #111827;
+}
+.metrics {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+}
+.metric {
+  font-size: 11px;
+  color: #374151;
+}
+.metric.ratio {
+  color: #059669;
+}
+.metric.ratio.neg {
+  color: #dc2626;
+}
+.metric.time {
+  color: #6b7280;
+}
+.compare-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  background: #f9fafb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.compare-body .preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.compare-body img {
+  max-width: 100%;
+  max-height: 200px;
+  display: block;
+}
+.compare-body .error-msg {
+  color: #991b1b;
+  font-size: 12px;
+}
+.compare-actions {
+  margin-top: 8px;
+  text-align: right;
 }
 
 /* 全屏图片对比区域 */
