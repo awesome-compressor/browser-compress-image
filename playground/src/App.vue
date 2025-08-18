@@ -1765,6 +1765,8 @@ function handleWheel(e: WheelEvent) {
 let isDragging = false
 let dragStartX = 0
 let dragStartY = 0
+let startTransformX = 0
+let startTransformY = 0
 
 function handleImageMouseDown(e: MouseEvent) {
   if (!isFullscreen.value) return
@@ -1777,6 +1779,8 @@ function handleImageMouseDown(e: MouseEvent) {
   isDragging = true
   dragStartX = e.clientX
   dragStartY = e.clientY
+  startTransformX = imageTransform.value.x
+  startTransformY = imageTransform.value.y
 
   // 阻止事件冒泡，避免触发比较滑块的拖拽
   e.preventDefault()
@@ -1867,8 +1871,10 @@ function calculateImageBounds() {
 function handleImageMouseMove(e: MouseEvent) {
   if (!isDragging) return
 
-  const newX = e.clientX - dragStartX
-  const newY = e.clientY - dragStartY
+  const deltaX = e.clientX - dragStartX
+  const deltaY = e.clientY - dragStartY
+  const newX = startTransformX + deltaX
+  const newY = startTransformY + deltaY
 
   // 获取边界
   const bounds = calculateImageBounds()
@@ -2382,7 +2388,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 alt="Original Image"
                 class="comparison-image-fullscreen"
                 :style="{
-                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
+                  transform: `translate(${imageTransform.x}px, ${imageTransform.y}px) scale(${imageZoom})`,
                   transformOrigin: 'center center',
                 }"
                 loading="eager"
@@ -2396,7 +2402,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 alt="Compressed Image"
                 class="comparison-image-fullscreen"
                 :style="{
-                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
+                  transform: `translate(${imageTransform.x}px, ${imageTransform.y}px) scale(${imageZoom})`,
                   transformOrigin: 'center center',
                 }"
                 loading="eager"
@@ -2417,7 +2423,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 :alt="currentImage.file.name"
                 class="single-image"
                 :style="{
-                  transform: `scale(${imageZoom}) translate(${imageTransform.x}px, ${imageTransform.y}px)`,
+                  transform: `translate(${imageTransform.x}px, ${imageTransform.y}px) scale(${imageZoom})`,
                   transformOrigin: 'center center',
                 }"
                 @load="handleImageLoad('original')"
@@ -3833,7 +3839,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
 .comparison-image-fullscreen {
   width: 100%;
-  display: contents;
+  display: block;
   height: 450px;
   /* Safari 兼容性 - object-fit 支持 */
   -o-object-fit: contain;
