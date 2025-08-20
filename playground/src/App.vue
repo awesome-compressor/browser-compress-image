@@ -2709,20 +2709,47 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       @close="closeComparePanel"
     >
       <div class="compare-panel">
+        <!-- 顶部摘要区域 -->
+        <div v-if="!compareLoading && compareResults.length > 0" class="compare-summary">
+          <div class="summary-header">
+            <div class="summary-title">
+              <span class="file-icon">📊</span>
+              <span class="file-name">{{ compareTargetName }}</span>
+            </div>
+            <div v-if="compareBestTool" class="summary-best">
+              <span class="best-label">Best Result:</span>
+              <span class="best-tool">{{ compareBestTool }}</span>
+              <span class="best-metrics">
+                {{ formatFileSize(compareResults.find(r => r.tool === compareBestTool)?.compressedSize || 0) }}
+                <span class="ratio" :class="{ neg: (compareResults.find(r => r.tool === compareBestTool)?.compressionRatio || 0) < 0 }">
+                  {{ (compareResults.find(r => r.tool === compareBestTool)?.compressionRatio || 0) < 0 ? '+' : '-' }}{{ Math.abs(compareResults.find(r => r.tool === compareBestTool)?.compressionRatio || 0).toFixed(1) }}%
+                </span>
+              </span>
+            </div>
+          </div>
+          <div v-if="compareBestTool" class="summary-actions">
+            <el-button
+              type="success"
+              size="small"
+              :icon="Download"
+              @click="applyCompareResult(compareResults.find(r => r.tool === compareBestTool)!)"
+            >
+              Use Best Result
+            </el-button>
+          </div>
+        </div>
+
         <div v-if="compareLoading" class="compare-loading">
-          <el-icon class="is-loading" size="28px">
-            <Loading />
-          </el-icon>
-          <div>Running tools…</div>
+          <div class="loading-content">
+            <el-icon class="is-loading" size="32px">
+              <Loading />
+            </el-icon>
+            <div class="loading-text">Comparing compression tools...</div>
+            <div class="loading-subtitle">This may take a few seconds</div>
+          </div>
         </div>
 
         <template v-else>
-          <div class="compare-legend">
-            <span class="legend-item best">Best</span>
-            <span class="legend-item ok">Success</span>
-            <span class="legend-item fail">Failed</span>
-          </div>
-
           <div class="compare-list">
             <div
               v-for="r in compareResults"
@@ -2988,6 +3015,107 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
    Use :global because overlay is teleported to body. */
 :global(.compare-modal .el-overlay-dialog) {
   padding-top: v-bind(compareSavedScrollY + 'px');
+}
+
+/* Compare Tools dialog styling improvements */
+:global(.compare-modal .el-dialog) {
+  border-radius: 20px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  box-shadow: 0 25px 80px rgba(102, 126, 234, 0.2);
+  backdrop-filter: blur(20px);
+}
+
+:global(.compare-modal .el-dialog__header) {
+  padding: 20px 24px 16px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+  border-bottom: 1px solid rgba(102, 126, 234, 0.15);
+  position: relative;
+}
+
+:global(.compare-modal .el-dialog__header::before) {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+}
+
+:global(.compare-modal .el-dialog__title) {
+  font-weight: 700;
+  font-size: 18px;
+  background: linear-gradient(45deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+:global(.compare-modal .el-dialog__title::before) {
+  content: '⚖️';
+  font-size: 20px;
+  filter: none;
+  -webkit-text-fill-color: initial;
+}
+
+:global(.compare-modal .el-dialog__body) {
+  padding: 20px 24px;
+  background: transparent;
+}
+
+:global(.compare-modal .el-dialog__footer) {
+  padding: 16px 24px 20px;
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.8), rgba(241, 245, 249, 0.8));
+  border-top: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+/* Compare Tools responsive design */
+@media (max-width: 1024px) {
+  :global(.compare-modal .el-dialog) {
+    margin: 20px;
+    width: calc(100vw - 40px) !important;
+    max-width: none !important;
+  }
+  
+  :global(.compare-modal .el-dialog__header),
+  :global(.compare-modal .el-dialog__body),
+  :global(.compare-modal .el-dialog__footer) {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  
+  .compare-list {
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+  }
+  
+  .file-name {
+    max-width: 150px;
+  }
+  
+  .summary-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .metrics {
+    display: flex;
+    gap: 6px;
+    white-space: nowrap;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  
+  .metric {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
 }
 
 .loading-spinner {
@@ -3712,114 +3840,310 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   min-height: 200px;
 }
 
-.compare-loading {
+/* 对比摘要区域 */
+.compare-summary {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.9));
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 20px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.1);
+}
+
+.summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.summary-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.file-icon {
+  font-size: 20px;
+  opacity: 0.8;
+}
+
+.file-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  background: linear-gradient(45deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.summary-best {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #6b7280;
 }
 
-.compare-legend {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.legend-item {
+.best-label {
   font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #f3f4f6;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.best-tool {
+  font-size: 14px;
+  font-weight: 700;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.12);
+  padding: 4px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.best-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+  font-size: 12px;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.best-metrics .ratio {
+  color: #059669;
+  font-weight: 600;
+}
+
+.best-metrics .ratio.neg {
+  color: #dc2626;
+}
+
+.summary-actions {
+  display: flex;
+  align-items: center;
+}
+
+/* 加载状态 */
+.compare-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(248, 250, 252, 0.05));
+  border-radius: 16px;
+  border: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #667eea;
+}
+
+.loading-text {
+  font-size: 16px;
+  font-weight: 600;
   color: #374151;
 }
-.legend-item.best {
-  background: rgba(16, 185, 129, 0.12);
-  color: #047857;
-}
-.legend-item.fail {
-  background: rgba(239, 68, 68, 0.12);
-  color: #991b1b;
+
+.loading-subtitle {
+  font-size: 14px;
+  color: #6b7280;
+  opacity: 0.8;
 }
 
 .compare-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
 }
+
 .compare-item {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 10px;
-  background: #fff;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.95));
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  padding: 16px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
 }
+
+.compare-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(102, 126, 234, 0.1),
+    transparent
+  );
+  transition: left 0.6s;
+}
+
+.compare-item:hover::before {
+  left: 100%;
+}
+
+.compare-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(102, 126, 234, 0.15);
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
 .compare-item.best {
   border-color: rgba(16, 185, 129, 0.4);
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.15);
+  box-shadow: 0 8px 32px rgba(16, 185, 129, 0.2);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(5, 150, 105, 0.05));
 }
+
+.compare-item.best:hover {
+  box-shadow: 0 16px 48px rgba(16, 185, 129, 0.25);
+}
+
 .compare-item.fail {
-  opacity: 0.8;
+  opacity: 0.7;
+  border-color: rgba(239, 68, 68, 0.3);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.03), rgba(220, 38, 38, 0.03));
 }
+
 .compare-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-.tool-name {
-  display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  position: relative;
+  z-index: 1;
 }
-.tool-name .badge {
-  font-weight: 700;
-  font-size: 12px;
-  color: #111827;
-}
-.metrics {
+
+.tool-name {
   display: flex;
   gap: 10px;
   align-items: center;
-  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
 }
+
+.tool-name .badge {
+  font-weight: 700;
+  font-size: 14px;
+  color: #111827;
+  background: linear-gradient(45deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.metrics {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
 .metric {
   font-size: 11px;
   color: #374151;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  font-weight: 600;
+  backdrop-filter: blur(5px);
+  transition: all 0.2s ease;
 }
+
+.metric:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
 .metric.ratio {
   color: #059669;
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
 }
+
 .metric.ratio.neg {
   color: #dc2626;
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
 }
+
 .metric.time {
-  color: #6b7280;
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.3);
 }
+
 .compare-body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 120px;
-  background: #f9fafb;
-  border-radius: 8px;
+  min-height: 140px;
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.8), rgba(241, 245, 249, 0.8));
+  border-radius: 12px;
   overflow: hidden;
+  margin-bottom: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  backdrop-filter: blur(5px);
+  position: relative;
+  z-index: 1;
 }
+
 .compare-body .preview {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
+  padding: 8px;
 }
+
 .compare-body img {
   max-width: 100%;
-  max-height: 200px;
+  max-height: 120px;
   display: block;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease;
 }
+
+.compare-body img:hover {
+  transform: scale(1.05);
+}
+
 .compare-body .error-msg {
-  color: #991b1b;
-  font-size: 12px;
+  color: #dc2626;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  padding: 20px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
 }
+
 .compare-actions {
-  margin-top: 8px;
-  text-align: right;
+  text-align: center;
+  position: relative;
+  z-index: 1;
 }
 
 /* 全屏图片对比区域 */
