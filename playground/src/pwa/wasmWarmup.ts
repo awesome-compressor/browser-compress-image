@@ -9,7 +9,9 @@ export async function warmupJsquashWasm(): Promise<void> {
     await Promise.all(
       formats.map(async (fmt) => {
         try {
-          await import(/* @vite-ignore */ `https://unpkg.com/@jsquash/${fmt}@latest?module`)
+          await import(
+            /* @vite-ignore */ `https://unpkg.com/@jsquash/${fmt}@latest?module`
+          )
         } catch (e) {
           console.warn(`[warmup] CDN import failed for ${fmt}:`, e)
         }
@@ -17,7 +19,7 @@ export async function warmupJsquashWasm(): Promise<void> {
     )
 
     // Additionally fetch the underlying WASM files to seed SW runtime cache
-    const wasmFile: Record<typeof formats[number], string> = {
+    const wasmFile: Record<(typeof formats)[number], string> = {
       png: 'squoosh_png_bg.wasm',
       jpeg: 'mozjpeg_bg.wasm',
       webp: 'squoosh_webp_bg.wasm',

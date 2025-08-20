@@ -146,7 +146,9 @@ function closeCropPage() {
 }
 
 // 接收裁剪页面返回的预处理参数并触发重新压缩
-function applyCropPreprocess(preprocess: import('../../src').PreprocessOptions) {
+function applyCropPreprocess(
+  preprocess: import('../../src').PreprocessOptions,
+) {
   if (croppingIndex.value == null) return
   const idx = croppingIndex.value
   const item = imageItems.value[idx]
@@ -196,7 +198,7 @@ async function openComparePanel(item: ImageItem) {
     compareBestTool.value = all.bestTool || ''
 
     // 构建 UI 结果并生成预览 URL
-  compareResults.value = (all.allResults || []).map((r: any) => {
+    compareResults.value = (all.allResults || []).map((r: any) => {
       let url: string | undefined
       if (r.success && r.result instanceof Blob) {
         url = URL.createObjectURL(r.result)
@@ -205,7 +207,7 @@ async function openComparePanel(item: ImageItem) {
       return {
         tool: r.tool,
         url,
-    blob: r.result as Blob | undefined,
+        blob: r.result as Blob | undefined,
         compressedSize: r.compressedSize,
         compressionRatio: r.compressionRatio,
         duration: r.duration,
@@ -225,6 +227,7 @@ async function openComparePanel(item: ImageItem) {
 
 function closeComparePanel() {
   showComparePanel.value = false
+  // 无需手动恢复滚动，交由 el-dialog 的 lock-scroll 处理
   // 关闭时清理生成的对象URL，避免内存泄漏
   cleanupCompareObjectUrls()
 }
@@ -1341,7 +1344,7 @@ async function compressImage(item: ImageItem): Promise<void> {
       quality: item.quality, // 直接使用图片的质量设置（已经是0-1范围）
       preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
       toolConfigs: enabledToolConfigs, // 传入工具配置
-  preprocess: item.preprocess, // 预处理：裁剪/旋转/缩放
+      preprocess: item.preprocess, // 预处理：裁剪/旋转/缩放
       useWorker: true, // 启用Worker支持（如果可用）
       useQueue: true, // 启用队列管理
       timeout: getDeviceBasedTimeout(30000), // 设备适配的超时时间
@@ -2689,7 +2692,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       :original-size="currentImage?.originalSize"
       :compressed-size="currentImage?.compressedSize"
       @close="closeCropPage"
-  @apply="applyCropPreprocess"
+      @apply="applyCropPreprocess"
     />
 
     <!-- 多工具结果对比面板 -->
@@ -2698,6 +2701,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       :title="`Compare Tools • ${compareTargetName}`"
       width="720px"
       :close-on-click-modal="false"
+      :lock-scroll="true"
+      append-to-body
+      :modal-class="'compare-modal'"
+      align-center
+      class="compare-dialog"
       @close="closeComparePanel"
     >
       <div class="compare-panel">
@@ -2733,13 +2741,15 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                     type="success"
                     size="small"
                     effect="dark"
-                  >Best</el-tag>
+                    >Best</el-tag
+                  >
                   <el-tag
                     v-else-if="!r.success"
                     type="danger"
                     size="small"
                     effect="plain"
-                  >Failed</el-tag>
+                    >Failed</el-tag
+                  >
                 </div>
                 <div class="metrics">
                   <span class="metric">
@@ -2749,9 +2759,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                     class="metric ratio"
                     :class="{ neg: r.compressionRatio < 0 }"
                   >
-                    {{ r.compressionRatio < 0 ? '+' : '-' }}{{
-                      Math.abs(r.compressionRatio).toFixed(1)
-                    }}%
+                    {{ r.compressionRatio < 0 ? '+' : '-'
+                    }}{{ Math.abs(r.compressionRatio).toFixed(1) }}%
                   </span>
                   <span class="metric time">{{ r.duration }}ms</span>
                 </div>
@@ -2770,7 +2779,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   size="small"
                   type="primary"
                   @click="applyCompareResult(r)"
-                >Use this result</el-button>
+                  >Use this result</el-button
+                >
               </div>
             </div>
           </div>
@@ -2971,6 +2981,13 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   /* 防止任何变换影响 */
   transform: none;
   will-change: auto;
+}
+
+/* Compare Tools dialog overlay adjustments
+   Keep Element Plus default flex centering; only offset from top by saved scroll.
+   Use :global because overlay is teleported to body. */
+:global(.compare-modal .el-overlay-dialog) {
+  padding-top: v-bind(compareSavedScrollY + 'px');
 }
 
 .loading-spinner {

@@ -17,7 +17,11 @@ export interface QualityResult {
 async function loadToCanvas(
   src: Blob | string,
   maxDimension = 512,
-): Promise<{ canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; imageData: ImageData }> {
+): Promise<{
+  canvas: HTMLCanvasElement
+  ctx: CanvasRenderingContext2D
+  imageData: ImageData
+}> {
   const img = await loadImage(src)
   const { width, height } = downscaleDims(img.width, img.height, maxDimension)
 
@@ -39,10 +43,13 @@ async function loadToCanvas(
   return { canvas, ctx, imageData }
 }
 
-async function loadImage(src: Blob | string): Promise<ImageBitmap | HTMLImageElement> {
+async function loadImage(
+  src: Blob | string,
+): Promise<ImageBitmap | HTMLImageElement> {
   try {
     if (typeof createImageBitmap === 'function') {
-      const blob = typeof src === 'string' ? await fetch(src).then((r) => r.blob()) : src
+      const blob =
+        typeof src === 'string' ? await fetch(src).then((r) => r.blob()) : src
       return await createImageBitmap(blob)
     }
   } catch {}
@@ -58,9 +65,13 @@ async function loadImage(src: Blob | string): Promise<ImageBitmap | HTMLImageEle
 }
 
 function downscaleDims(w: number, h: number, maxDimension: number) {
-  if (!maxDimension || (w <= maxDimension && h <= maxDimension)) return { width: w, height: h }
+  if (!maxDimension || (w <= maxDimension && h <= maxDimension))
+    return { width: w, height: h }
   const scale = Math.min(maxDimension / w, maxDimension / h)
-  return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)) }
+  return {
+    width: Math.max(1, Math.round(w * scale)),
+    height: Math.max(1, Math.round(h * scale)),
+  }
 }
 
 /** Convert RGBA ImageData to grayscale luma array (Float64) */
@@ -79,7 +90,10 @@ function toLumaArray(img: ImageData): Float64Array {
 }
 
 /** PSNR on grayscale luma */
-export function computePSNR(original: ImageData, compressed: ImageData): number {
+export function computePSNR(
+  original: ImageData,
+  compressed: ImageData,
+): number {
   const w = Math.min(original.width, compressed.width)
   const h = Math.min(original.height, compressed.height)
   const a = cropImageData(original, w, h)
@@ -99,7 +113,10 @@ export function computePSNR(original: ImageData, compressed: ImageData): number 
 }
 
 /** Simplified global SSIM (not windowed) on grayscale luma */
-export function computeSSIM(original: ImageData, compressed: ImageData): number {
+export function computeSSIM(
+  original: ImageData,
+  compressed: ImageData,
+): number {
   const w = Math.min(original.width, compressed.width)
   const h = Math.min(original.height, compressed.height)
   const a = cropImageData(original, w, h)
@@ -199,13 +216,31 @@ export async function generateDifferenceHeatmap(
 function colormapTurbo(x: number): [number, number, number] {
   x = Math.min(1, Math.max(0, x))
   const r = Math.round(
-    255 * (0.13572 + 4.61539 * x - 42.6609 * x ** 2 + 132.131 * x ** 3 - 152.942 * x ** 4 + 59.2866 * x ** 5),
+    255 *
+      (0.13572 +
+        4.61539 * x -
+        42.6609 * x ** 2 +
+        132.131 * x ** 3 -
+        152.942 * x ** 4 +
+        59.2866 * x ** 5),
   )
   const g = Math.round(
-    255 * (0.091402 + 2.194 * x + 4.84274 * x ** 2 - 27.278 * x ** 3 + 44.3536 * x ** 4 - 22.1643 * x ** 5),
+    255 *
+      (0.091402 +
+        2.194 * x +
+        4.84274 * x ** 2 -
+        27.278 * x ** 3 +
+        44.3536 * x ** 4 -
+        22.1643 * x ** 5),
   )
   const b = Math.round(
-    255 * (0.106673 + 0.628 * x + 1.44467 * x ** 2 - 6.42 * x ** 3 + 7.7133 * x ** 4 - 2.79586 * x ** 5),
+    255 *
+      (0.106673 +
+        0.628 * x +
+        1.44467 * x ** 2 -
+        6.42 * x ** 3 +
+        7.7133 * x ** 4 -
+        2.79586 * x ** 5),
   )
   return [
     Math.max(0, Math.min(255, r)),

@@ -17,12 +17,12 @@ registerSW({ immediate: true })
 
 // Warm up JSQuash modules and WASM in background for faster first use
 const idle = (cb: () => void) =>
-	(window as any).requestIdleCallback
-		? (window as any).requestIdleCallback(cb)
-		: setTimeout(cb, 1500)
+  (window as any).requestIdleCallback
+    ? (window as any).requestIdleCallback(cb)
+    : setTimeout(cb, 1500)
 
 idle(() => {
-	warmupJsquashWasm().catch((e: unknown) =>
-		console.warn('WASM warmup failed', e),
-	)
+  warmupJsquashWasm().catch((e: unknown) =>
+    console.warn('WASM warmup failed', e),
+  )
 })

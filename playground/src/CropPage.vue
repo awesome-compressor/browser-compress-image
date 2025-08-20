@@ -4,7 +4,14 @@ import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
 import { ElMessage } from 'element-plus'
 // @ts-ignore
-import { Aim, CloseBold, Download, Refresh, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
+import {
+  Aim,
+  CloseBold,
+  Download,
+  Refresh,
+  ZoomIn,
+  ZoomOut,
+} from '@element-plus/icons-vue'
 
 interface Props {
   originalUrl: string
@@ -422,7 +429,7 @@ onMounted(() => {
   if (cropPage) {
     // 移动端用 appContainer?.clientHeight - document.querySelector('#app')?.clientHeight
     // pc端用 appContainer?.scrollTop
-  // 判断当前设备类型
+    // 判断当前设备类型
     if (isMobile.value) {
       cropPage.style.top = `${appContainer?.clientHeight! - document.querySelector('#app')?.clientHeight!}px`
     } else {
@@ -583,7 +590,11 @@ onBeforeUnmount(() => {
               <el-icon><CloseBold /></el-icon>
               <span>关闭</span>
             </button>
-            <button class="download-btn" title="应用到压缩" @click.stop="applyAndReturn">
+            <button
+              class="download-btn"
+              title="应用到压缩"
+              @click.stop="applyAndReturn"
+            >
               <el-icon><Aim /></el-icon>
               <span>应用裁剪</span>
             </button>

@@ -55,7 +55,7 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
     priority,
     timeout = 30000,
     type = 'blob' as T,
-  preprocess,
+    preprocess,
     ...compressOptions
   } = options
 
@@ -69,7 +69,8 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
   if (preprocess) {
     try {
       // Map arbitrary file.type to supported union for preprocess output
-      let guessedOutType: 'image/png' | 'image/jpeg' | 'image/webp' = 'image/png'
+      let guessedOutType: 'image/png' | 'image/jpeg' | 'image/webp' =
+        'image/png'
       if (preprocess.outputType) {
         guessedOutType = preprocess.outputType
       } else if (/jpe?g/i.test(file.type)) {
@@ -97,7 +98,9 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
       // if preprocessed, wrap as File to retain name when possible
       inputForCompression instanceof File
         ? inputForCompression
-        : new File([inputForCompression], file.name, { type: (inputForCompression as Blob).type }),
+        : new File([inputForCompression], file.name, {
+            type: (inputForCompression as Blob).type,
+          }),
       compressOptions,
       useWorker,
       type,
@@ -108,7 +111,9 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
   const compressPromise = compressionQueue.compress(
     inputForCompression instanceof File
       ? inputForCompression
-      : new File([inputForCompression], file.name, { type: (inputForCompression as Blob).type }),
+      : new File([inputForCompression], file.name, {
+          type: (inputForCompression as Blob).type,
+        }),
     {
       ...compressOptions,
       useWorker,

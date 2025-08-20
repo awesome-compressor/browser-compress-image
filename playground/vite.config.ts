@@ -35,7 +35,9 @@ export default defineConfig({
         // Runtime caching for CDN modules like @jsquash and unpkg
         runtimeCaching: [
           {
-            urlPattern: ({ url }: any) => url.origin.includes('unpkg.com') || url.origin.includes('cdn.jsdelivr.net'),
+            urlPattern: ({ url }: any) =>
+              url.origin.includes('unpkg.com') ||
+              url.origin.includes('cdn.jsdelivr.net'),
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'cdn-modules',

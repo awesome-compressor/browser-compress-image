@@ -28,11 +28,17 @@ function computeResize(
 ): { width: number; height: number } {
   if (!resize) return { width: srcW, height: srcH }
 
-  const { targetWidth, targetHeight, maxWidth, maxHeight, fit = 'contain' } =
-    resize
+  const {
+    targetWidth,
+    targetHeight,
+    maxWidth,
+    maxHeight,
+    fit = 'contain',
+  } = resize
 
   // Direct target sizing
-  if (targetWidth && targetHeight) return { width: targetWidth, height: targetHeight }
+  if (targetWidth && targetHeight)
+    return { width: targetWidth, height: targetHeight }
   if (targetWidth && !targetHeight) {
     const scale = targetWidth / srcW
     return { width: targetWidth, height: Math.round(srcH * scale) }
@@ -95,7 +101,7 @@ export async function preprocessImage(
   const cropW = Math.max(1, Math.min(crop.width, naturalW - cropX))
   const cropH = Math.max(1, Math.min(crop.height, naturalH - cropY))
 
-  const rotate = ((options.rotate ?? 0) % 360 + 360) % 360
+  const rotate = (((options.rotate ?? 0) % 360) + 360) % 360
   const flipH = !!options.flipHorizontal
   const flipV = !!options.flipVertical
 
@@ -155,7 +161,10 @@ export async function preprocessImage(
   ctx.drawImage(temp, 0, 0, canvas.width, canvas.height)
   ctx.restore()
 
-  const mime = options.outputType || (src instanceof Blob ? src.type : 'image/png') || 'image/png'
+  const mime =
+    options.outputType ||
+    (src instanceof Blob ? src.type : 'image/png') ||
+    'image/png'
   const quality = options.outputQuality
 
   const blob: Blob = await new Promise((resolve, reject) => {
@@ -170,7 +179,12 @@ export async function preprocessImage(
   memoryManager.cleanupCanvasElement(temp)
   memoryManager.cleanupCanvasElement(canvas)
 
-  return { blob, width: canvas.width, height: canvas.height, mimeType: blob.type }
+  return {
+    blob,
+    width: canvas.width,
+    height: canvas.height,
+    mimeType: blob.type,
+  }
 }
 
 export default preprocessImage
