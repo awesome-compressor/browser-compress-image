@@ -2710,7 +2710,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
     >
       <div class="compare-panel">
         <!-- 顶部摘要区域 -->
-        <div v-if="!compareLoading && compareResults.length > 0" class="compare-summary">
+        <div
+          v-if="!compareLoading && compareResults.length > 0"
+          class="compare-summary"
+        >
           <div class="summary-header">
             <div class="summary-title">
               <span class="file-icon">📊</span>
@@ -2720,22 +2723,47 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               <span class="best-label">Best Result:</span>
               <span class="best-tool">{{ compareBestTool }}</span>
               <span class="best-metrics">
-                {{ formatFileSize(compareResults.find(r => r.tool === compareBestTool)?.compressedSize || 0) }}
-                <span class="ratio" :class="{ neg: (compareResults.find(r => r.tool === compareBestTool)?.compressionRatio || 0) < 0 }">
-                  {{ (compareResults.find(r => r.tool === compareBestTool)?.compressionRatio || 0) < 0 ? '+' : '-' }}{{ Math.abs(compareResults.find(r => r.tool === compareBestTool)?.compressionRatio || 0).toFixed(1) }}%
+                {{
+                  formatFileSize(
+                    compareResults.find((r) => r.tool === compareBestTool)
+                      ?.compressedSize || 0,
+                  )
+                }}
+                <span
+                  class="ratio"
+                  :class="{
+                    neg:
+                      (compareResults.find((r) => r.tool === compareBestTool)
+                        ?.compressionRatio || 0) < 0,
+                  }"
+                >
+                  {{
+                    (compareResults.find((r) => r.tool === compareBestTool)
+                      ?.compressionRatio || 0) < 0
+                      ? '+'
+                      : '-'
+                  }}{{
+                    Math.abs(
+                      compareResults.find((r) => r.tool === compareBestTool)
+                        ?.compressionRatio || 0,
+                    ).toFixed(1)
+                  }}%
                 </span>
               </span>
             </div>
           </div>
           <div v-if="compareBestTool" class="summary-actions">
-            <el-button
-              type="success"
-              size="small"
-              :icon="Download"
-              @click="applyCompareResult(compareResults.find(r => r.tool === compareBestTool)!)"
+            <button
+              class="custom-btn best-btn"
+              @click="
+                applyCompareResult(
+                  compareResults.find((r) => r.tool === compareBestTool)!,
+                )
+              "
             >
-              Use Best Result
-            </el-button>
+              <span class="btn-icon">✨</span>
+              <span class="btn-text">Use Best Result</span>
+            </button>
           </div>
         </div>
 
@@ -2801,13 +2829,14 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               </div>
 
               <div class="compare-actions">
-                <el-button
+                <button
                   v-if="r.success && r.url"
-                  size="small"
-                  type="primary"
+                  class="custom-btn use-btn"
                   @click="applyCompareResult(r)"
-                  >Use this result</el-button
                 >
+                  <span class="btn-icon">👆</span>
+                  <span class="btn-text">Use this result</span>
+                </button>
               </div>
             </div>
           </div>
@@ -3029,7 +3058,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
 :global(.compare-modal .el-dialog__header) {
   padding: 20px 24px 16px;
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+  background: linear-gradient(
+    135deg,
+    rgba(102, 126, 234, 0.1),
+    rgba(118, 75, 162, 0.1)
+  );
   border-bottom: 1px solid rgba(102, 126, 234, 0.15);
   position: relative;
 }
@@ -3070,7 +3103,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
 :global(.compare-modal .el-dialog__footer) {
   padding: 16px 24px 20px;
-  background: linear-gradient(135deg, rgba(248, 250, 252, 0.8), rgba(241, 245, 249, 0.8));
+  background: linear-gradient(
+    135deg,
+    rgba(248, 250, 252, 0.8),
+    rgba(241, 245, 249, 0.8)
+  );
   border-top: 1px solid rgba(102, 126, 234, 0.1);
 }
 
@@ -3081,29 +3118,29 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
     width: calc(100vw - 40px) !important;
     max-width: none !important;
   }
-  
+
   :global(.compare-modal .el-dialog__header),
   :global(.compare-modal .el-dialog__body),
   :global(.compare-modal .el-dialog__footer) {
     padding-left: 16px;
     padding-right: 16px;
   }
-  
+
   .compare-list {
     grid-template-columns: 1fr !important;
     gap: 12px;
   }
-  
+
   .file-name {
     max-width: 150px;
   }
-  
+
   .summary-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
-  
+
   .metrics {
     display: flex;
     gap: 6px;
@@ -3111,7 +3148,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
     align-items: flex-start;
     flex-wrap: wrap;
   }
-  
+
   .metric {
     font-size: 10px;
     padding: 3px 8px;
@@ -3842,7 +3879,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
 /* 对比摘要区域 */
 .compare-summary {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.9));
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.9),
+    rgba(248, 250, 252, 0.9)
+  );
   border: 1px solid rgba(102, 126, 234, 0.2);
   border-radius: 16px;
   padding: 16px;
@@ -3935,7 +3976,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   align-items: center;
   justify-content: center;
   min-height: 200px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(248, 250, 252, 0.05));
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(248, 250, 252, 0.05)
+  );
   border-radius: 16px;
   border: 1px solid rgba(102, 126, 234, 0.1);
 }
@@ -3967,7 +4012,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 }
 
 .compare-item {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.95));
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.95),
+    rgba(248, 250, 252, 0.95)
+  );
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 16px;
   padding: 16px;
@@ -4007,7 +4056,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 .compare-item.best {
   border-color: rgba(16, 185, 129, 0.4);
   box-shadow: 0 8px 32px rgba(16, 185, 129, 0.2);
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(5, 150, 105, 0.05));
+  background: linear-gradient(
+    135deg,
+    rgba(16, 185, 129, 0.05),
+    rgba(5, 150, 105, 0.05)
+  );
 }
 
 .compare-item.best:hover {
@@ -4017,7 +4070,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 .compare-item.fail {
   opacity: 0.7;
   border-color: rgba(239, 68, 68, 0.3);
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.03), rgba(220, 38, 38, 0.03));
+  background: linear-gradient(
+    135deg,
+    rgba(239, 68, 68, 0.03),
+    rgba(220, 38, 38, 0.03)
+  );
 }
 
 .compare-head {
@@ -4098,7 +4155,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   align-items: center;
   justify-content: center;
   min-height: 140px;
-  background: linear-gradient(135deg, rgba(248, 250, 252, 0.8), rgba(241, 245, 249, 0.8));
+  background: linear-gradient(
+    135deg,
+    rgba(248, 250, 252, 0.8),
+    rgba(241, 245, 249, 0.8)
+  );
   border-radius: 12px;
   overflow: hidden;
   margin-bottom: 12px;
@@ -4144,6 +4205,108 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   text-align: center;
   position: relative;
   z-index: 1;
+}
+
+/* Custom button styles */
+.custom-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 12px;
+  padding: 10px 18px;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+  font-family: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.custom-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  transition: left 0.6s;
+}
+
+.custom-btn:hover::before {
+  left: 100%;
+}
+
+.custom-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+}
+
+.custom-btn:active {
+  transform: translateY(0px) scale(0.98);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
+}
+
+.custom-btn .btn-icon {
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+
+.custom-btn:hover .btn-icon {
+  transform: scale(1.1) rotate(5deg);
+}
+
+.custom-btn .btn-text {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+/* Best result button special styling */
+.best-btn {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.3);
+}
+
+.best-btn:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);
+}
+
+.best-btn:active {
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.5);
+}
+
+/* Use result button */
+.use-btn {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+  font-size: 12px;
+  padding: 8px 16px;
+}
+
+.use-btn:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+}
+
+.use-btn:active {
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
 }
 
 /* 全屏图片对比区域 */
