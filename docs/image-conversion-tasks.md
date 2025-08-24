@@ -6,13 +6,13 @@
 - [ ] 评估 `icojs` 或轻量 ICO 编码器（浏览器端可用）
 - [x] 评估 webp/avif 在目标浏览器矩阵的可用性（已存在 JSQuash 作为核心能力）
 
-## 1. 库：转换核心（src/conversion/*）
+## 1. 库：转换核心（src/conversion/*）✅ 已完成
 - [x] 新建目录 `src/conversion/`
 - [x] `types.ts`：定义 `TargetFormat`、`ImageConvertOptions`、`ImageConvertResult`
 - [x] `encoders.ts`：
   - [x] `encodeWithJsquash(blob, {format, quality})`
   - [x] `encodeWithCanvas(blob, {format, quality})`
-  - [x] `encodeIcoFromImage(blob, options)`（优先 `icojs`，带降级）
+  - [x] `encodeIcoFromImage(blob, options)`（当前为占位实现，需改进）
 - [x] `convertImage.ts`：根据 `targetFormat` 与环境能力选择编码器并输出 Blob；统一错误与 MIME 映射
 - [x] `index.ts`：输出 `convertImage` 与类型
 
@@ -21,7 +21,7 @@
 - 质量参数对 jpeg/webp 生效；png/ico 忽略或采用内部策略
 - 大小控制、异常转换有明确错误信息
 
-## 2. 库：编排（src/orchestrators/*）
+## 2. 库：编排（src/orchestrators/*）✅ 已完成
 - [x] 新建目录 `src/orchestrators/`
 - [x] `compareConversion.ts`：实现 `buildConversionColumn({ file, compressOptions, convertOptions })`
   - [x] C→T：遍历 `compress(..., { returnAllResults: true })` 成功项并转换
@@ -33,7 +33,7 @@
 - 三类项齐备；单项失败不影响其他项
 - 统计口径与既有压缩结果一致（size、ratio、duration）
 
-## 3. Playground：UI 集成
+## 3. Playground：UI 集成 ✅ 已完成
 - [x] 在每个压缩结果上添加格式转换按钮
 - [x] 创建格式转换对比浮动窗口（1200px宽度）
   - [x] 目标格式选择器（png/jpeg/webp/ico）
@@ -43,6 +43,7 @@
   - [x] 加载状态和错误处理
 - [x] URL 统一回收和内存管理
 - [x] 支持直接下载各种转换策略的结果文件
+- [ ] 修复 ICO 编码器实现（当前为占位代码）
 
 验收标准：
 - [x] 不影响现有功能
@@ -71,10 +72,28 @@
 
 ---
 
+## 当前进度总结 (2025-08-25)
+
+### ✅ 已完成阶段：
+1) **转换核心（1.x）** - 完整实现转换功能
+2) **编排与产出"新的一列"（2.x）** - 完整实现三流程编排系统  
+3) **UI 集成与交互（3.x）** - 完整实现浮层对比界面
+
+### 🔴 待解决的重要问题：
+1. **ICO 编码器为占位实现** - 需要真正的 ICO 编码逻辑
+2. **缺少测试覆盖** - 转换功能无单元测试
+3. **性能优化** - Worker 集成和并发控制待实施
+
+### 📋 下一步行动计划：
+1. 实现真正的 ICO 编码器（考虑使用 icojs 库）
+2. 添加转换功能的单元测试
+3. 集成 Worker 执行提升性能
+4. 完善文档和使用指南
+
 ## 开发分阶段交付
-1) 转换核心（1.x）
-2) 编排与产出“新的一列”（2.x）
-3) UI 集成与交互（3.x）
-4) 测试与文档（4.x）
+1) 转换核心（1.x）✅ 已完成
+2) 编排与产出"新的一列"（2.x）✅ 已完成  
+3) UI 集成与交互（3.x）✅ 已完成
+4) 测试与文档（4.x）🔄 进行中
 
 备注：严格控制单文件行数（≤200）与目录文件数（≤8），必要时继续模块化切分。
