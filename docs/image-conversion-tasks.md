@@ -4,17 +4,17 @@
 
 ## 0. 预备
 - [ ] 评估 `icojs` 或轻量 ICO 编码器（浏览器端可用）
-- [ ] 评估 webp/avif 在目标浏览器矩阵的可用性（已存在 JSQuash 作为核心能力）
+- [x] 评估 webp/avif 在目标浏览器矩阵的可用性（已存在 JSQuash 作为核心能力）
 
 ## 1. 库：转换核心（src/conversion/*）
-- [ ] 新建目录 `src/conversion/`
-- [ ] `types.ts`：定义 `TargetFormat`、`ImageConvertOptions`、`ImageConvertResult`
-- [ ] `encoders.ts`：
-  - [ ] `encodeWithJsquash(blob, {format, quality})`
-  - [ ] `encodeWithCanvas(blob, {format, quality})`
-  - [ ] `encodeIcoFromImage(blob, options)`（优先 `icojs`，带降级）
-- [ ] `convertImage.ts`：根据 `targetFormat` 与环境能力选择编码器并输出 Blob；统一错误与 MIME 映射
-- [ ] `index.ts`：输出 `convertImage` 与类型
+- [x] 新建目录 `src/conversion/`
+- [x] `types.ts`：定义 `TargetFormat`、`ImageConvertOptions`、`ImageConvertResult`
+- [x] `encoders.ts`：
+  - [x] `encodeWithJsquash(blob, {format, quality})`
+  - [x] `encodeWithCanvas(blob, {format, quality})`
+  - [x] `encodeIcoFromImage(blob, options)`（优先 `icojs`，带降级）
+- [x] `convertImage.ts`：根据 `targetFormat` 与环境能力选择编码器并输出 Blob；统一错误与 MIME 映射
+- [x] `index.ts`：输出 `convertImage` 与类型
 
 验收标准：
 - 输入 png/jpeg/webp → 输出对应 MIME 的 Blob；ico 生成 `image/x-icon`
@@ -22,12 +22,12 @@
 - 大小控制、异常转换有明确错误信息
 
 ## 2. 库：编排（src/orchestrators/*）
-- [ ] 新建目录 `src/orchestrators/`
-- [ ] `compareConversion.ts`：实现 `buildConversionColumn({ file, compressOptions, convertOptions })`
-  - [ ] C→T：遍历 `compress(..., { returnAllResults: true })` 成功项并转换
-  - [ ] T：`convertImage(file)`
-  - [ ] T→C：`convertImage(file)` 结果再 `compress`（基于目标格式工具集）
-  - [ ] 产出项包含 meta/size/ratio/duration/success/error 与参数回溯
+- [x] 新建目录 `src/orchestrators/`
+- [x] `compareConversion.ts`：实现 `buildConversionColumn({ file, compressOptions, convertOptions })`
+  - [x] C→T：遍历 `compress(..., { returnAllResults: true })` 成功项并转换
+  - [x] T：`convertImage(file)`
+  - [x] T→C：`convertImage(file)` 结果再 `compress`（基于目标格式工具集）
+  - [x] 产出项包含 meta/size/ratio/duration/success/error 与参数回溯
 
 验收标准：
 - 三类项齐备；单项失败不影响其他项
