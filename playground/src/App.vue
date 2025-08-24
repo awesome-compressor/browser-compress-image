@@ -42,6 +42,8 @@ import {
   memoryManager,
   waitForCompressionInitialization,
 } from '../../src'
+import { buildConversionColumn, type ConversionCompareItem } from '../../src/orchestrators/compareConversion'
+import type { TargetFormat } from '../../src/conversion'
 import 'img-comparison-slider/dist/styles.css'
 
 // 导入 img-comparison-slider
@@ -168,6 +170,20 @@ const compareResults = ref<ToolCompareItem[]>([])
 let compareObjectUrls: string[] = []
 const compareTargetIndex = ref<number>(-1)
 
+// 扩展转换对比项类型以包含url属性
+interface ConversionCompareItemWithUrl extends ConversionCompareItem {
+  url?: string
+}
+
+// 格式转换对比面板状态
+const showConversionPanel = ref(false)
+const conversionLoading = ref(false)
+const conversionTargetName = ref('')
+const conversionResults = ref<ConversionCompareItemWithUrl[]>([])
+let conversionObjectUrls: string[] = []
+const conversionTargetIndex = ref<number>(-1)
+const selectedTargetFormat = ref<TargetFormat>('webp')
+
 async function openComparePanel(item: ImageItem) {
   // 打开面板并加载数据
   showComparePanel.value = true
@@ -239,6 +255,13 @@ function cleanupCompareObjectUrls() {
   }
 }
 
+function cleanupConversionObjectUrls() {
+  if (conversionObjectUrls.length) {
+    conversionObjectUrls.forEach((u) => URL.revokeObjectURL(u))
+    conversionObjectUrls = []
+  }
+}
+
 // 应用选中的对比结果到当前图片
 function applyCompareResult(r: ToolCompareItem) {
   if (!r.success || !r.blob) return
@@ -260,6 +283,101 @@ function applyCompareResult(r: ToolCompareItem) {
   })
 
   ElMessage.success(`Applied result from ${r.tool}`)
+}
+
+// 打开格式转换对比面板
+async function openConversionPanel(item: ImageItem) {
+  showConversionPanel.value = true
+  conversionLoading.value = true
+  conversionTargetName.value = item.file.name
+  conversionTargetIndex.value = imageItems.value.findIndex(
+    (it) => it.id === item.id,
+  )
+
+  // 清理旧的对象URL
+  cleanupConversionObjectUrls()
+
+  try {
+    // 过滤出启用的工具配置
+    const enabledToolConfigs = toolConfigs.value.filter(
+      (config) => config.enabled && config.key.trim(),
+    )
+
+    // 构建转换对比数据
+    const conversionColumn = await buildConversionColumn({
+      file: item.file,
+      compressOptions: {
+        quality: item.quality,
+        preserveExif: preserveExif.value,
+        returnAllResults: true,
+        toolConfigs: enabledToolConfigs,
+      },
+      convertOptions: {
+        targetFormat: selectedTargetFormat.value,
+        quality: 0.8, // 转换质量设置
+      }
+    })
+
+    // 构建 UI 结果并生成预览 URL
+    conversionResults.value = conversionColumn.items.map((r: ConversionCompareItem) => {
+      let url: string | undefined
+      if (r.success && r.blob) {
+        url = URL.createObjectURL(r.blob)
+        conversionObjectUrls.push(url)
+      }
+
+      return {
+        ...r,
+        url
+      }
+    })
+  } catch (err) {
+    console.error('Conversion comparison failed:', err)
+    ElMessage.error(
+      err instanceof Error ? err.message : 'Failed to compare conversions',
+    )
+  } finally {
+    conversionLoading.value = false
+  }
+}
+
+function closeConversionPanel() {
+  showConversionPanel.value = false
+  // 关闭时清理生成的对象URL，避免内存泄漏
+  cleanupConversionObjectUrls()
+}
+
+// 下载转换结果
+function downloadConversionResult(r: ConversionCompareItemWithUrl) {
+  if (!r.success || !r.blob) return
+  
+  const idx = conversionTargetIndex.value
+  if (idx < 0 || idx >= imageItems.value.length) return
+  const item = imageItems.value[idx]
+  
+  // 构建文件名
+  const originalName = item.file.name
+  const nameWithoutExt = originalName.replace(/\.[^/.]+$/, '')
+  const flowSuffix = r.meta.flow === 'C→T' ? '_compressed' : 
+                    r.meta.flow === 'T' ? '_converted' : '_converted_compressed'
+  const toolSuffix = r.meta.tool ? `_${r.meta.tool}` : ''
+  const extension = r.meta.convertOptions.targetFormat === 'jpeg' ? 'jpg' : r.meta.convertOptions.targetFormat
+  
+  const fileName = `${nameWithoutExt}${flowSuffix}${toolSuffix}.${extension}`
+  
+  // 下载文件
+  const url = URL.createObjectURL(r.blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  
+  const flowLabel = r.meta.flow === 'C→T' ? 'Compress→Convert' : 
+                   r.meta.flow === 'T' ? 'Convert Only' : 'Convert→Compress'
+  ElMessage.success(`Downloaded ${flowLabel} result as ${fileName}`)
 }
 
 // 压缩进度状态
@@ -814,7 +932,8 @@ function handleTouchStart(e: TouchEvent) {
   const target = e.target as HTMLElement
   if (
     target.closest('img-comparison-slider') ||
-    target.closest('.comparison-slider-fullscreen')
+    target.closest('.comparison-slider-fullscreen') ||
+    target.closest('.conversion-comparison-slider')
   ) {
     isMobileDragging.value = true
     console.log('touch start')
@@ -833,7 +952,8 @@ function handleMouseDown(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (
     target.closest('img-comparison-slider') ||
-    target.closest('.comparison-slider-fullscreen')
+    target.closest('.comparison-slider-fullscreen') ||
+    target.closest('.conversion-comparison-slider')
   ) {
     isPCDragging.value = true
     console.log('mouse down on slider')
@@ -2320,6 +2440,14 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 ✂️
               </button>
               <button
+                v-if="item.compressedUrl && !item.compressionError"
+                class="action-btn-small convert-single"
+                title="Convert image format"
+                @click.stop="openConversionPanel(item)"
+              >
+                🔄
+              </button>
+              <button
                 class="action-btn-small delete-single"
                 title="Remove this image"
                 @click.stop="deleteImage(index)"
@@ -2846,6 +2974,127 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="closeComparePanel"> Close </el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 格式转换对比面板 -->
+    <el-dialog
+      v-model="showConversionPanel"
+      :title="`Format Conversion • ${conversionTargetName}`"
+      width="1200px"
+      :close-on-click-modal="false"
+      :lock-scroll="true"
+      append-to-body
+      :modal-class="'conversion-modal'"
+      align-center
+      class="conversion-dialog"
+      @close="closeConversionPanel"
+    >
+      <div class="conversion-panel">
+        <!-- 顶部格式选择区域 -->
+        <div class="format-selection">
+          <div class="format-header">
+            <span class="format-icon">🔄</span>
+            <span class="format-title">Convert to format:</span>
+          </div>
+          <div class="format-options">
+            <el-radio-group v-model="selectedTargetFormat" @change="() => { if (conversionTargetIndex >= 0) openConversionPanel(imageItems[conversionTargetIndex]) }">
+              <el-radio value="png">PNG</el-radio>
+              <el-radio value="jpeg">JPEG</el-radio>
+              <el-radio value="webp">WebP</el-radio>
+              <el-radio value="ico">ICO</el-radio>
+            </el-radio-group>
+          </div>
+        </div>
+
+        <!-- 加载状态 -->
+        <div v-if="conversionLoading" class="conversion-loading">
+          <el-icon class="is-loading" size="40px">
+            <Loading />
+          </el-icon>
+          <div class="loading-text">Converting and comparing...</div>
+        </div>
+
+        <!-- 转换结果列表 -->
+        <div v-else-if="conversionResults.length > 0" class="conversion-list">
+          <div
+            v-for="r in conversionResults"
+            :key="`${r.meta.flow}-${r.meta.tool || 'direct'}`"
+            class="conversion-item"
+            :class="{
+              success: r.success,
+              fail: !r.success,
+            }"
+          >
+            <div class="conversion-header">
+              <div class="flow-label">
+                <span class="flow-badge" :class="`flow-${r.meta.flow.toLowerCase().replace('→', '-')}`">
+                  {{ r.meta.flow === 'C→T' ? 'Compress → Convert' : 
+                     r.meta.flow === 'T' ? 'Convert Only' : 'Convert → Compress' }}
+                </span>
+                <span v-if="r.meta.tool" class="tool-name">{{ r.meta.tool }}</span>
+              </div>
+              <div v-if="r.success" class="conversion-metrics">
+                <span class="size">{{ formatFileSize(r.size || 0) }}</span>
+                <span class="ratio" :class="{ neg: (r.compressionRatio || 0) < 0 }">
+                  {{ (r.compressionRatio || 0) < 0 ? '+' : '-' }}{{ Math.abs(r.compressionRatio || 0).toFixed(1) }}%
+                </span>
+                <span class="duration">{{ (r.duration || 0).toFixed(0) }}ms</span>
+              </div>
+            </div>
+
+            <div v-if="r.success && r.url" class="conversion-preview">
+              <div class="comparison-container">
+                <img-comparison-slider
+                  class="conversion-comparison-slider"
+                  value="50"
+                >
+                  <!-- eslint-disable -->
+                  <img
+                    slot="first"
+                    :src="imageItems[conversionTargetIndex]?.originalUrl"
+                    alt="Original"
+                    class="comparison-image"
+                    loading="lazy"
+                    decoding="sync"
+                  />
+                  <img
+                    slot="second"
+                    :src="r.url"
+                    :alt="`${r.meta.flow} result`"
+                    class="comparison-image"
+                    loading="lazy"
+                    decoding="sync"
+                  />
+                  <!-- eslint-enable -->
+                </img-comparison-slider>
+              </div>
+              <div class="preview-actions">
+                <button class="download-btn" @click="downloadConversionResult(r)">
+                  <span class="btn-icon">⬇️</span>
+                  <span class="btn-text">Download</span>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="!r.success" class="conversion-error">
+              <span class="error-icon">❌</span>
+              <span class="error-message">{{ r.error || 'Conversion failed' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else-if="!conversionLoading" class="conversion-empty">
+          <div class="empty-icon">🔄</div>
+          <div class="empty-text">No conversion results available</div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="closeConversionPanel">Close</el-button>
         </div>
       </template>
     </el-dialog>
@@ -3877,6 +4126,234 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   min-height: 200px;
 }
 
+/* 转换对比面板 */
+.conversion-panel {
+  min-height: 300px;
+}
+
+.format-selection {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.9),
+    rgba(248, 250, 252, 0.9)
+  );
+  border-radius: 16px;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+.format-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.format-icon {
+  font-size: 24px;
+}
+
+.format-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.format-options .el-radio-group {
+  display: flex;
+  gap: 16px;
+}
+
+.conversion-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 16px;
+}
+
+.conversion-loading .loading-text {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.conversion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.conversion-item {
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  transition: all 0.3s ease;
+}
+
+.conversion-item.success {
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.conversion-item.fail {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(254, 242, 242, 0.95);
+}
+
+.conversion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: linear-gradient(
+    135deg,
+    rgba(248, 250, 252, 0.8),
+    rgba(241, 245, 249, 0.8)
+  );
+  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.flow-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.flow-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.flow-badge.flow-c-t {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+}
+
+.flow-badge.flow-t {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.flow-badge.flow-t-c {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+}
+
+.tool-name {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.conversion-metrics {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.conversion-metrics .size {
+  font-weight: 600;
+  color: #374151;
+}
+
+.conversion-metrics .ratio {
+  font-weight: 600;
+  color: #10b981;
+}
+
+.conversion-metrics .ratio.neg {
+  color: #ef4444;
+}
+
+.conversion-metrics .duration {
+  color: #6b7280;
+}
+
+.conversion-preview {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.comparison-container {
+  width: 100%;
+  height: 300px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+.conversion-comparison-slider {
+  width: 100%;
+  height: 100%;
+  --divider-width: 3px;
+  --divider-color: rgba(255, 255, 255, 0.8);
+  --default-handle-width: 48px;
+  --default-handle-color: rgba(255, 255, 255, 0.9);
+  --default-handle-opacity: 1;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.conversion-comparison-slider .comparison-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.preview-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.conversion-error {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #ef4444;
+}
+
+.conversion-error .error-icon {
+  font-size: 16px;
+}
+
+.conversion-error .error-message {
+  font-size: 14px;
+}
+
+.conversion-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 16px;
+}
+
+.conversion-empty .empty-icon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+
+.conversion-empty .empty-text {
+  font-size: 14px;
+  color: #6b7280;
+}
+
 /* 对比摘要区域 */
 .compare-summary {
   background: linear-gradient(
@@ -4292,21 +4769,32 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.5);
 }
 
-/* Use result button */
-.use-btn {
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+/* Download result button */
+.download-btn {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(5, 150, 105, 0.3);
   font-size: 12px;
+  font-weight: 600;
   padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.use-btn:hover {
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+.download-btn:hover {
+  background: linear-gradient(135deg, #047857 0%, #065f46 100%);
+  box-shadow: 0 8px 24px rgba(5, 150, 105, 0.4);
+  transform: translateY(-1px);
 }
 
-.use-btn:active {
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
+.download-btn:active {
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.5);
+  transform: translateY(0);
 }
 
 /* 全屏图片对比区域 */
@@ -4654,7 +5142,9 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 img-comparison-slider,
 img-comparison-slider *,
 .comparison-image-fullscreen,
-.comparison-slider-fullscreen {
+.comparison-slider-fullscreen,
+.conversion-comparison-slider,
+.conversion-comparison-slider * {
   opacity: 1 !important;
   visibility: visible !important;
   transition: none !important;
@@ -4664,7 +5154,8 @@ img-comparison-slider *,
 }
 
 /* 防止浏览器默认的图片加载动画 */
-img-comparison-slider img {
+img-comparison-slider img,
+.conversion-comparison-slider img {
   opacity: 1 !important;
   visibility: visible !important;
   transition: none !important;

@@ -1,5 +1,6 @@
-import { compress, type CompressOptions, type MultipleCompressResults } from '../compress'
-import { convertImage, type ImageConvertOptions, type ImageConvertResult } from '../conversion'
+import { compress } from '../compress'
+import type { CompressOptions } from '../types'
+import { convertImage, type ImageConvertOptions } from '../conversion'
 import type { CompressResultType } from '../types'
 
 export interface ConversionCompareItemMeta {
@@ -30,17 +31,17 @@ export interface ConversionColumnResult {
   items: ConversionCompareItem[]
 }
 
-// Helper function to get tools for target format
-function getToolsForFormat(targetFormat: string): string[] {
-  const formatTools: Record<string, string[]> = {
-    png: ['jsquash', 'browser-image-compression', 'canvas', 'compressorjs'],
-    jpeg: ['jsquash', 'compressorjs', 'canvas', 'browser-image-compression'],
-    webp: ['jsquash', 'canvas', 'browser-image-compression', 'compressorjs'],
-    ico: ['canvas'] // ICO typically converted from PNG
-  }
+// Helper function to get tools for target format (currently unused)
+// function getToolsForFormat(targetFormat: string): string[] {
+//   const formatTools: Record<string, string[]> = {
+//     png: ['jsquash', 'browser-image-compression', 'canvas', 'compressorjs'],
+//     jpeg: ['jsquash', 'compressorjs', 'canvas', 'browser-image-compression'],
+//     webp: ['jsquash', 'canvas', 'browser-image-compression', 'compressorjs'],
+//     ico: ['canvas'] // ICO typically converted from PNG
+//   }
   
-  return formatTools[targetFormat] || ['jsquash', 'canvas', 'browser-image-compression']
-}
+//   return formatTools[targetFormat] || ['jsquash', 'canvas', 'browser-image-compression']
+// }
 
 // C→T flow: compress then convert
 export async function buildConversionColumn(
@@ -63,11 +64,8 @@ export async function buildConversionColumn(
     const cToTPromises = compressResults.allResults
       .filter(result => result.success)
       .map(async (result) => {
-        const startTime = performance.now()
-        
         try {
           const convertResult = await convertImage(result.result as Blob, convertOptions)
-          const duration = performance.now() - startTime
           
           return {
             meta: {
@@ -83,8 +81,6 @@ export async function buildConversionColumn(
             duration: result.duration + convertResult.duration
           }
         } catch (error) {
-          const duration = performance.now() - startTime
-          
           return {
             meta: {
               flow: 'C→T' as const,
@@ -94,7 +90,7 @@ export async function buildConversionColumn(
             },
             success: false,
             error: error instanceof Error ? error.message : String(error),
-            duration: result.duration + duration
+            duration: result.duration
           }
         }
       })
@@ -140,7 +136,6 @@ export async function buildConversionColumn(
       try {
         // First convert
         const convertResult = await convertImage(file, convertOptions)
-        const convertDuration = performance.now() - startTime
         
         // Then compress with tools suitable for target format
         const convertedFile = new File([convertResult.blob], file.name, { 

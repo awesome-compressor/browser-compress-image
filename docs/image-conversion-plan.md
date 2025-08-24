@@ -105,20 +105,28 @@ export async function buildConversionColumn(
 - 统计口径：对每个项保留 size、ratio（基于原图）、耗时；`meta` 中保留两端参数，便于回溯。
 - 错误策略：单项失败不影响其他项，保留 error 信息用于 UI 呈现。
 
-## 四、playground 交互设计
-- 新增“格式选择”触发器：在“对比面板”中（或主界面工具栏）提供目标格式选择（png/jpeg/webp/ico）。
-- 触发后：
-  - 以侧边或下方“新的一列”追加展示 ConversionColumnResult：
-    - 小标题：目标格式
-    - 每行：
-      - 标签：`C→T | T | T→C` +（若有）工具名
-      - 预览：来自 `blob` 的 ObjectURL
-      - 数据：size、ratio、duration、success/error（保持与压缩对比的卡片风格一致）
-      - 操作：下载（后缀与 MIME 匹配）
-  - 参数保留：在行内展示 `compressOptions` 与 `convertOptions` 的摘要（如 quality、preserveExif），并可展开详情（用于排查）。
+## 四、playground 交互设计（实际实现）
+- 在每个压缩结果的操作按钮区域新增"格式转换"按钮（🔄图标）。
+- 点击转换按钮后：
+  - 弹出格式转换对比浮动窗口，类似现有的"工具对比"窗口。
+  - 窗口顶部提供目标格式选择（png/jpeg/webp/ico）单选按钮。
+  - 下方展示三种转换策略的对比结果：
+    - `C→T (Compress → Convert)`：先压缩后转换，基于当前压缩结果
+    - `T (Convert Only)`：仅转换原图到目标格式
+    - `T→C (Convert → Compress)`：先转换原图，再用最佳压缩工具压缩
+  - 每个结果展示：
+    - 策略标签和工具名（如果有）
+    - 文件大小、压缩比、处理时长
+    - 预览图片
+    - "使用此结果"按钮，点击后应用到当前图片
 - 体验：
-  - 生成列时展示 loading 骨架；支持取消生成（中止 worker 任务）。
-  - 保持原有列不变；允许多次选择不同目标格式，产生多列。
+  - 使用较大的浮层（1200px宽度）提供更好的视觉体验
+  - 每个转换结果使用img-comparison-slider展示原图和转换结果的对比
+  - 加载时显示loading状态
+  - 支持切换目标格式，实时重新计算对比结果
+  - 结果失败时显示错误信息
+  - 关闭窗口时自动清理ObjectURL防止内存泄漏
+  - 支持直接下载各种转换策略的结果文件
 
 ## 五、性能与资源管理
 - 并行策略：

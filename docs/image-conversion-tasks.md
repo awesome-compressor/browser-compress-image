@@ -34,16 +34,21 @@
 - 统计口径与既有压缩结果一致（size、ratio、duration）
 
 ## 3. Playground：UI 集成
-- [ ] 新增目标格式选择器（png/jpeg/webp/ico）
-- [ ] 触发后追加“新的一列”展示 ConversionColumnResult
-  - [ ] 卡片项：标签（C→T/T/T→C）、工具名、数据、下载按钮
-  - [ ] 悬停/展开展示 `compressOptions` 与 `convertOptions` 摘要
-- [ ] 生成时 loading、可取消；URL 统一回收
+- [x] 在每个压缩结果上添加格式转换按钮
+- [x] 创建格式转换对比浮动窗口（1200px宽度）
+  - [x] 目标格式选择器（png/jpeg/webp/ico）
+  - [x] 三种转换策略对比展示（C→T/T/T→C）
+  - [x] 使用img-comparison-slider进行原图和转换结果的对比
+  - [x] 结果卡片：策略标签、工具名、文件信息、对比滑块、下载按钮
+  - [x] 加载状态和错误处理
+- [x] URL 统一回收和内存管理
+- [x] 支持直接下载各种转换策略的结果文件
 
 验收标准：
-- 不影响现有“压缩对比”列
-- 可多次添加不同目标格式列
-- 下载扩展名与 MIME 一致
+- [x] 不影响现有功能
+- [x] 提供可视化的原图vs转换结果对比
+- [x] 支持下载不同转换策略的结果
+- [x] 支持切换目标格式重新计算
 
 ## 4. Worker 与性能
 - [ ] 复用/扩展现有 worker，将 JSQuash 转换放入 worker 执行

@@ -1,4 +1,4 @@
-import type { ImageConvertOptions, ImageConvertResult, TargetFormat } from './types'
+import type { ImageConvertOptions, ImageConvertResult } from './types'
 import { MIME_MAP, encodeWithJsquash, encodeWithCanvas, encodeIcoFromImage } from './encoders'
 
 export async function convertImage(
@@ -13,7 +13,7 @@ export async function convertImage(
       ? fileOrBlob 
       : new File([fileOrBlob], 'image', { type: fileOrBlob.type })
 
-    const { targetFormat, quality, preserveExif } = options
+    const { targetFormat, quality } = options
 
     let blob: Blob
 
@@ -48,8 +48,6 @@ export async function convertImage(
     }
 
   } catch (error) {
-    const duration = performance.now() - startTime
-    
     if (error instanceof Error) {
       throw new Error(`Image conversion failed: ${error.message}`)
     }
