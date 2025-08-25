@@ -44,7 +44,6 @@ import {
 } from '../../src'
 import { buildConversionColumn, type ConversionCompareItem } from '../../src/orchestrators/compareConversion'
 import type { TargetFormat } from '../../src/conversion'
-import { convertImage } from '../../src/conversion'
 import 'img-comparison-slider/dist/styles.css'
 
 // 导入 img-comparison-slider
@@ -178,14 +177,12 @@ interface ConversionCompareItemWithUrl extends ConversionCompareItem {
 
 // 格式转换对比面板状态
 const showConversionPanel = ref(false)
-const showFormatSelectionDialog = ref(false)
 const conversionLoading = ref(false)
 const conversionTargetName = ref('')
 const conversionResults = ref<ConversionCompareItemWithUrl[]>([])
 let conversionObjectUrls: string[] = []
 const conversionTargetIndex = ref<number>(-1)
 const selectedTargetFormat = ref<TargetFormat>('webp')
-const pendingConversionItem = ref<ImageItem | null>(null)
 
 async function openComparePanel(item: ImageItem) {
   // 打开面板并加载数据
@@ -288,27 +285,6 @@ function applyCompareResult(r: ToolCompareItem) {
   ElMessage.success(`Applied result from ${r.tool}`)
 }
 
-// 显示格式选择对话框
-function showFormatSelection(item: ImageItem) {
-  pendingConversionItem.value = item
-  showFormatSelectionDialog.value = true
-}
-
-// 确认格式选择并开始转换
-async function confirmFormatSelection() {
-  if (!pendingConversionItem.value) return
-  
-  showFormatSelectionDialog.value = false
-  await openConversionPanel(pendingConversionItem.value)
-  pendingConversionItem.value = null
-}
-
-// 取消格式选择
-function cancelFormatSelection() {
-  showFormatSelectionDialog.value = false
-  pendingConversionItem.value = null
-}
-
 // 打开格式转换对比面板
 async function openConversionPanel(item: ImageItem) {
   showConversionPanel.value = true
@@ -318,18 +294,17 @@ async function openConversionPanel(item: ImageItem) {
     (it) => it.id === item.id,
   )
 
-  // 清理旧的对象URL和结果
+  // 清理旧的对象URL
   cleanupConversionObjectUrls()
-  conversionResults.value = []
-  
+
   try {
     // 过滤出启用的工具配置
     const enabledToolConfigs = toolConfigs.value.filter(
       (config) => config.enabled && config.key.trim(),
     )
-    
-    // 开始流式转换
-    await streamConversion({
+
+    // 构建转换对比数据
+    const conversionColumn = await buildConversionColumn({
       file: item.file,
       compressOptions: {
         quality: item.quality,
@@ -339,7 +314,21 @@ async function openConversionPanel(item: ImageItem) {
       },
       convertOptions: {
         targetFormat: selectedTargetFormat.value,
-        quality: 0.8,
+        quality: 0.8, // 转换质量设置
+      }
+    })
+
+    // 构建 UI 结果并生成预览 URL
+    conversionResults.value = conversionColumn.items.map((r: ConversionCompareItem) => {
+      let url: string | undefined
+      if (r.success && r.blob) {
+        url = URL.createObjectURL(r.blob)
+        conversionObjectUrls.push(url)
+      }
+
+      return {
+        ...r,
+        url
       }
     })
   } catch (err) {
@@ -349,204 +338,6 @@ async function openConversionPanel(item: ImageItem) {
     )
   } finally {
     conversionLoading.value = false
-  }
-}
-
-// 流式转换处理
-async function streamConversion(input: {
-  file: File,
-  compressOptions: any,
-  convertOptions: { targetFormat: TargetFormat, quality: number }
-}) {
-  const { file, compressOptions, convertOptions } = input
-  
-  // 添加一个结果到UI的辅助函数
-  const addResult = (result: ConversionCompareItem) => {
-    let url: string | undefined
-    if (result.success && result.blob) {
-      url = URL.createObjectURL(result.blob)
-      conversionObjectUrls.push(url)
-    }
-    
-    conversionResults.value.push({
-      ...result,
-      url
-    })
-  }
-  
-  try {
-    // 1. 先处理T流程（仅转换原图）
-    const tResult = await convertSingleImage(file, convertOptions, 'T')
-    addResult(tResult)
-    
-    // 2. 获取压缩结果并处理C→T流程
-    const compressResults = await compress(file, {
-      ...compressOptions,
-      returnAllResults: true,
-      type: 'blob'
-    })
-    
-    // 逐个处理C→T结果
-    for (const compressResult of compressResults.allResults.filter(r => r.success)) {
-      try {
-        const ctResult = await convertCompressedImage(
-          compressResult.result as Blob, 
-          convertOptions, 
-          compressResult.tool,
-          compressResult.duration,
-          file.size
-        )
-        addResult(ctResult)
-      } catch (error) {
-        const errorResult: ConversionCompareItem = {
-          meta: {
-            flow: 'C→T',
-            tool: compressResult.tool,
-            compressOptions,
-            convertOptions
-          },
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-          duration: compressResult.duration
-        }
-        addResult(errorResult)
-      }
-    }
-    
-    // 3. 处理T→C流程（转换后再压缩）
-    try {
-      const tcResult = await convertThenCompress(file, convertOptions, compressOptions)
-      if (tcResult) {
-        addResult(tcResult)
-      }
-    } catch (error) {
-      console.warn('T→C flow failed:', error)
-    }
-    
-  } catch (error) {
-    throw error
-  }
-}
-
-// 转换单个图片（T流程）
-async function convertSingleImage(file: File, convertOptions: any, flow: string): Promise<ConversionCompareItem> {
-  const startTime = performance.now()
-  
-  try {
-    const convertResult = await convertImage(file, convertOptions)
-    const duration = performance.now() - startTime
-    
-    return {
-      meta: {
-        flow: flow as 'T',
-        convertOptions
-      },
-      blob: convertResult.blob,
-      success: true,
-      size: convertResult.blob.size,
-      compressionRatio: ((file.size - convertResult.blob.size) / file.size) * 100,
-      duration
-    }
-  } catch (error) {
-    const duration = performance.now() - startTime
-    
-    return {
-      meta: {
-        flow: flow as 'T',
-        convertOptions
-      },
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-      duration
-    }
-  }
-}
-
-// 转换压缩后的图片（C→T流程）
-async function convertCompressedImage(
-  blob: Blob, 
-  convertOptions: any, 
-  tool: string, 
-  compressDuration: number,
-  originalSize: number
-): Promise<ConversionCompareItem> {
-  const startTime = performance.now()
-  
-  try {
-    const convertResult = await convertImage(blob, convertOptions)
-    const totalDuration = compressDuration + (performance.now() - startTime)
-    
-    return {
-      meta: {
-        flow: 'C→T',
-        tool,
-        convertOptions
-      },
-      blob: convertResult.blob,
-      success: true,
-      size: convertResult.blob.size,
-      compressionRatio: ((originalSize - convertResult.blob.size) / originalSize) * 100,
-      duration: totalDuration
-    }
-  } catch (error) {
-    const totalDuration = compressDuration + (performance.now() - startTime)
-    
-    return {
-      meta: {
-        flow: 'C→T',
-        tool,
-        convertOptions
-      },
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-      duration: totalDuration
-    }
-  }
-}
-
-// 转换后再压缩（T→C流程）
-async function convertThenCompress(
-  file: File, 
-  convertOptions: any, 
-  compressOptions: any
-): Promise<ConversionCompareItem | null> {
-  const startTime = performance.now()
-  
-  try {
-    // 先转换
-    const convertResult = await convertImage(file, convertOptions)
-    const convertedFile = new File([convertResult.blob], file.name, { 
-      type: convertResult.mime 
-    })
-    
-    // 再压缩
-    const compressResult = await compress(convertedFile, compressOptions)
-    const totalDuration = performance.now() - startTime
-    
-    return {
-      meta: {
-        flow: 'T→C',
-        tool: compressResult.tool,
-        convertOptions
-      },
-      blob: compressResult.result as Blob,
-      success: true,
-      size: (compressResult.result as Blob).size,
-      compressionRatio: ((file.size - (compressResult.result as Blob).size) / file.size) * 100,
-      duration: totalDuration
-    }
-  } catch (error) {
-    const totalDuration = performance.now() - startTime
-    
-    return {
-      meta: {
-        flow: 'T→C',
-        convertOptions
-      },
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-      duration: totalDuration
-    }
   }
 }
 
@@ -2652,7 +2443,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 v-if="item.compressedUrl && !item.compressionError"
                 class="action-btn-small convert-single"
                 title="Convert image format"
-                @click.stop="showFormatSelection(item)"
+                @click.stop="openConversionPanel(item)"
               >
                 🔄
               </button>
@@ -3187,73 +2978,6 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       </template>
     </el-dialog>
 
-    <!-- 格式选择对话框 -->
-    <el-dialog
-      v-model="showFormatSelectionDialog"
-      title="Select Target Format"
-      width="480px"
-      :close-on-click-modal="false"
-    >
-      <div class="format-selection-content">
-        <div class="format-selection-header">
-          <el-icon size="24px" color="#667eea">
-            <Picture />
-          </el-icon>
-          <span>Choose the format to convert to:</span>
-        </div>
-        
-        <div class="format-selection-options">
-          <el-radio-group v-model="selectedTargetFormat" size="large">
-            <el-radio value="png" class="format-radio">
-              <div class="format-option">
-                <span class="format-icon">🖼️</span>
-                <div class="format-info">
-                  <div class="format-name">PNG</div>
-                  <div class="format-desc">Lossless, supports transparency</div>
-                </div>
-              </div>
-            </el-radio>
-            <el-radio value="jpeg" class="format-radio">
-              <div class="format-option">
-                <span class="format-icon">📸</span>
-                <div class="format-info">
-                  <div class="format-name">JPEG</div>
-                  <div class="format-desc">Lossy, smaller file size</div>
-                </div>
-              </div>
-            </el-radio>
-            <el-radio value="webp" class="format-radio">
-              <div class="format-option">
-                <span class="format-icon">🌐</span>
-                <div class="format-info">
-                  <div class="format-name">WebP</div>
-                  <div class="format-desc">Modern format, best compression</div>
-                </div>
-              </div>
-            </el-radio>
-            <el-radio value="ico" class="format-radio">
-              <div class="format-option">
-                <span class="format-icon">⭐</span>
-                <div class="format-info">
-                  <div class="format-name">ICO</div>
-                  <div class="format-desc">Icon format, multi-size</div>
-                </div>
-              </div>
-            </el-radio>
-          </el-radio-group>
-        </div>
-      </div>
-      
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="cancelFormatSelection">Cancel</el-button>
-          <el-button type="primary" @click="confirmFormatSelection">
-            Start Conversion
-          </el-button>
-        </div>
-      </template>
-    </el-dialog>
-
     <!-- 格式转换对比面板 -->
     <el-dialog
       v-model="showConversionPanel"
@@ -3285,9 +3009,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
         </div>
 
         <!-- 加载状态 -->
-        <div v-if="conversionLoading && conversionResults.length === 0" class="conversion-loading-simple">
-          <div class="loading-spinner">⏳</div>
-          <div class="loading-text">Converting...</div>
+        <div v-if="conversionLoading" class="conversion-loading">
+          <el-icon class="is-loading" size="40px">
+            <Loading />
+          </el-icon>
+          <div class="loading-text">Converting and comparing...</div>
         </div>
 
         <!-- 转换结果列表 -->
@@ -4451,93 +4177,6 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 .conversion-loading .loading-text {
   font-size: 14px;
   color: #6b7280;
-}
-
-/* 格式选择对话框样式 */
-.format-selection-content {
-  padding: 8px 0;
-}
-
-.format-selection-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
-  font-size: 16px;
-  font-weight: 500;
-  color: #374151;
-}
-
-.format-selection-options {
-  margin: 0 -8px;
-}
-
-.format-radio {
-  display: block;
-  margin: 8px;
-  border-radius: 12px;
-  border: 2px solid transparent;
-  transition: all 0.2s ease;
-}
-
-.format-radio:hover {
-  border-color: rgba(102, 126, 234, 0.2);
-  background: rgba(102, 126, 234, 0.05);
-}
-
-.format-radio.is-checked {
-  border-color: #667eea;
-  background: rgba(102, 126, 234, 0.1);
-}
-
-.format-option {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  cursor: pointer;
-}
-
-.format-icon {
-  font-size: 24px;
-  width: 32px;
-  text-align: center;
-}
-
-.format-info {
-  flex: 1;
-}
-
-.format-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 4px;
-}
-
-.format-desc {
-  font-size: 13px;
-  color: #6b7280;
-}
-
-/* 简化的loading样式 */
-.conversion-loading-simple {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 32px 20px;
-  color: #6b7280;
-}
-
-.loading-spinner {
-  font-size: 20px;
-  animation: spin 2s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
 }
 
 .conversion-list {
