@@ -5,7 +5,7 @@ export const MIME_MAP: Record<TargetFormat, string> = {
   png: 'image/png',
   jpeg: 'image/jpeg',
   webp: 'image/webp',
-  ico: 'image/x-icon'
+  ico: 'image/x-icon',
 }
 
 // Convert file to ImageData using canvas (currently unused but may be needed later)
@@ -37,7 +37,7 @@ export const MIME_MAP: Record<TargetFormat, string> = {
 export async function encodeWithJsquash(
   file: File,
   format: TargetFormat,
-  quality?: number
+  quality?: number,
 ): Promise<Blob> {
   try {
     // For now, fallback to canvas encoding as JSQuash integration is complex
@@ -52,7 +52,7 @@ export async function encodeWithJsquash(
 export async function encodeWithCanvas(
   file: File,
   format: TargetFormat,
-  quality?: number
+  quality?: number,
 ): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image()
@@ -98,7 +98,7 @@ export async function encodeWithCanvas(
           }
         },
         mimeType,
-        qualityParam
+        qualityParam,
       )
     }
 
@@ -110,47 +110,59 @@ export async function encodeWithCanvas(
 // ICO encoder (simplified placeholder)
 export async function encodeIcoFromImage(
   file: File,
-  options?: ImageConvertOptions
+  options?: ImageConvertOptions,
 ): Promise<Blob> {
   try {
     // Convert to PNG first
     const pngBlob = await encodeWithCanvas(file, 'png')
-    
+
     // Create a simple ICO file structure (basic implementation)
     // Note: This is a simplified version. For production, use a proper ICO library
     const pngArray = new Uint8Array(await pngBlob.arrayBuffer())
-    
+
     // ICO header: 6 bytes
     const icoHeader = new Uint8Array([
-      0x00, 0x00, // Reserved (must be 0)
-      0x01, 0x00, // Image type (1 = ICO)
-      0x01, 0x00  // Number of images (1)
+      0x00,
+      0x00, // Reserved (must be 0)
+      0x01,
+      0x00, // Image type (1 = ICO)
+      0x01,
+      0x00, // Number of images (1)
     ])
-    
+
     // ICO directory entry: 16 bytes
     const width = 256 // Use 0 for 256
     const height = 256 // Use 0 for 256
     const pngSize = pngArray.length
-    
+
     const icoDirectory = new Uint8Array([
-      width === 256 ? 0 : width,  // Width (0 = 256)
+      width === 256 ? 0 : width, // Width (0 = 256)
       height === 256 ? 0 : height, // Height (0 = 256)
-      0x00,           // Color count (0 = no palette)
-      0x00,           // Reserved (must be 0)
-      0x01, 0x00,     // Color planes (1)
-      0x20, 0x00,     // Bits per pixel (32)
-      pngSize & 0xFF, (pngSize >> 8) & 0xFF, // Image size (low bytes)
-      (pngSize >> 16) & 0xFF, (pngSize >> 24) & 0xFF, // Image size (high bytes)
-      0x16, 0x00, 0x00, 0x00  // Offset to image data (22 bytes)
+      0x00, // Color count (0 = no palette)
+      0x00, // Reserved (must be 0)
+      0x01,
+      0x00, // Color planes (1)
+      0x20,
+      0x00, // Bits per pixel (32)
+      pngSize & 0xff,
+      (pngSize >> 8) & 0xff, // Image size (low bytes)
+      (pngSize >> 16) & 0xff,
+      (pngSize >> 24) & 0xff, // Image size (high bytes)
+      0x16,
+      0x00,
+      0x00,
+      0x00, // Offset to image data (22 bytes)
     ])
-    
-    const icoBlob = new Blob([icoHeader, icoDirectory, pngArray], { 
-      type: 'image/x-icon' 
+
+    const icoBlob = new Blob([icoHeader, icoDirectory, pngArray], {
+      type: 'image/x-icon',
     })
-    
+
     return icoBlob
   } catch (error) {
     console.error('ICO encoding failed:', error)
-    throw new Error(`ICO encoding failed: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(
+      `ICO encoding failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 }
