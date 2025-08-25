@@ -4309,8 +4309,12 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 .conversion-comparison-slider .comparison-image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
+  /* Safari 兼容性 - object-fit 支持 */
+  -o-object-fit: contain;
+  /* 渲染优化 */
+  transform: translateZ(0);
 }
 
 .preview-actions {
