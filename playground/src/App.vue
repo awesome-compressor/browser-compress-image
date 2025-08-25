@@ -335,14 +335,18 @@ async function openConversionPanel(item: ImageItem) {
     )
 
     // 构建转换对比数据
+    // ICO格式特殊处理：不支持压缩，只进行格式转换
+    const isICO = selectedTargetFormat.value === 'ico'
     const conversionColumn = await buildConversionColumn({
       file: item.file,
-      compressOptions: {
-        quality: item.quality,
-        preserveExif: preserveExif.value,
-        returnAllResults: true,
-        toolConfigs: enabledToolConfigs,
-      },
+      compressOptions: isICO
+        ? undefined
+        : {
+            quality: item.quality,
+            preserveExif: preserveExif.value,
+            returnAllResults: true,
+            toolConfigs: enabledToolConfigs,
+          },
       convertOptions: {
         targetFormat: selectedTargetFormat.value,
         quality: 0.8, // 转换质量设置
@@ -3183,36 +3187,54 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
             </div>
 
             <div v-if="r.success && r.url" class="conversion-preview">
-              <div class="comparison-container">
-                <img-comparison-slider
-                  class="conversion-comparison-slider"
-                  value="50"
-                >
-                  <!-- eslint-disable -->
-                  <img
-                    slot="first"
-                    :src="imageItems[conversionTargetIndex]?.originalUrl"
-                    alt="Original"
-                    class="comparison-image"
-                    loading="lazy"
-                    decoding="sync"
-                  />
-                  <img
-                    slot="second"
-                    :src="r.url"
-                    :alt="`${r.meta.flow} result`"
-                    class="comparison-image"
-                    loading="lazy"
-                    decoding="sync"
-                  />
-                  <!-- eslint-enable -->
-                </img-comparison-slider>
+              <!-- ICO格式不显示对比slider，因为无法在img标签中正确显示 -->
+              <div v-if="selectedTargetFormat === 'ico'" class="ico-result">
+                <div class="ico-info">
+                  <span class="ico-icon">🔄</span>
+                  <span class="ico-text">ICO file converted successfully</span>
+                  <span class="ico-size">{{ formatFileSize(r.size || 0) }}</span>
+                </div>
+                <div class="preview-actions">
+                  <button class="download-btn" @click="downloadConversionResult(r)">
+                    <span class="btn-icon">⬇️</span>
+                    <span class="btn-text">Download</span>
+                  </button>
+                </div>
               </div>
-              <div class="preview-actions">
-                <button class="download-btn" @click="downloadConversionResult(r)">
-                  <span class="btn-icon">⬇️</span>
-                  <span class="btn-text">Download</span>
-                </button>
+
+              <!-- 其他格式显示对比slider -->
+              <div v-else>
+                <div class="comparison-container">
+                  <img-comparison-slider
+                    class="conversion-comparison-slider"
+                    value="50"
+                  >
+                    <!-- eslint-disable -->
+                    <img
+                      slot="first"
+                      :src="imageItems[conversionTargetIndex]?.originalUrl"
+                      alt="Original"
+                      class="comparison-image"
+                      loading="lazy"
+                      decoding="sync"
+                    />
+                    <img
+                      slot="second"
+                      :src="r.url"
+                      :alt="`${r.meta.flow} result`"
+                      class="comparison-image"
+                      loading="lazy"
+                      decoding="sync"
+                    />
+                    <!-- eslint-enable -->
+                  </img-comparison-slider>
+                </div>
+                <div class="preview-actions">
+                  <button class="download-btn" @click="downloadConversionResult(r)">
+                    <span class="btn-icon">⬇️</span>
+                    <span class="btn-text">Download</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -4468,6 +4490,43 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 ::deep(.conversion-comparison-slider.comparison-slider-fullscreen .divider) {
   background: rgba(255, 255, 255, 0.8);
   box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+/* ICO格式结果展示样式 */
+.ico-result {
+  padding: 20px;
+  text-align: center;
+}
+
+.ico-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border-radius: 12px;
+  border: 1px solid rgba(14, 165, 233, 0.2);
+}
+
+.ico-info .ico-icon {
+  font-size: 20px;
+}
+
+.ico-info .ico-text {
+  font-weight: 600;
+  color: #0284c7;
+  font-size: 15px;
+}
+
+.ico-info .ico-size {
+  font-size: 13px;
+  color: #0369a1;
+  background: rgba(14, 165, 233, 0.1);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: monospace;
 }
 
 .preview-actions {
