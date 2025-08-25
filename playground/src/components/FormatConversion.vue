@@ -1,314 +1,357 @@
 <template>
   <div class="format-conversion">
-    <!-- 预选择格式的对话框 -->
-    <el-dialog
-      v-model="showFormatSelectDialog"
-      :title="`Select Format • ${targetImageName}`"
-      width="520px"
-      :close-on-click-modal="false"
-      :lock-scroll="true"
-      append-to-body
-      align-center
+    <!-- 预选择格式的对话框 - 自定义设计 -->
+    <div
+      v-if="showFormatSelectDialog"
+      class="format-select-overlay"
+      :style="{ top: `${scrollTop}px` }"
+      @click="cancelFormatSelection"
     >
-      <div class="format-select-panel">
-        <div class="format-select-header">
-          <span class="format-icon">🔄</span>
-          <span class="format-title">Convert to format:</span>
+      <div class="format-select-dialog" @click.stop>
+        <!-- 对话框头部 -->
+        <div class="format-dialog-header">
+          <div class="format-dialog-title">
+            <span class="format-title-icon">🔄</span>
+            <div class="format-title-content">
+              <h3 class="format-title-main">Convert Image Format</h3>
+              <p class="format-title-sub">{{ targetImageName }}</p>
+            </div>
+          </div>
+          <button class="format-close-btn" @click="cancelFormatSelection">
+            <span class="format-close-icon">✕</span>
+          </button>
         </div>
-        <div class="format-options">
-          <el-radio-group v-model="selectedTargetFormat">
-            <el-radio value="png"> PNG </el-radio>
-            <el-radio value="jpeg"> JPEG </el-radio>
-            <el-radio value="webp"> WebP </el-radio>
-            <el-radio value="ico"> ICO </el-radio>
-          </el-radio-group>
+
+        <!-- 格式选择区域 -->
+        <div class="format-select-content">
+          <div class="format-select-description">
+            Choose the target format for your image conversion:
+          </div>
+
+          <div class="format-options-grid">
+            <div
+              v-for="format in formatOptions"
+              :key="format.value"
+              class="format-option-card"
+              :class="{ active: selectedTargetFormat === format.value }"
+              @click="selectedTargetFormat = format.value"
+            >
+              <div class="format-option-icon">{{ format.icon }}</div>
+              <div class="format-option-info">
+                <div class="format-option-name">{{ format.name }}</div>
+                <div class="format-option-desc">{{ format.description }}</div>
+              </div>
+              <div class="format-option-check">
+                <div class="format-check-circle">
+                  <span
+                    v-if="selectedTargetFormat === format.value"
+                    class="format-check-mark"
+                    >✓</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 对话框底部按钮 -->
+        <div class="format-dialog-footer">
+          <button
+            class="format-btn format-btn-secondary"
+            @click="cancelFormatSelection"
+          >
+            Cancel
+          </button>
+          <button
+            class="format-btn format-btn-primary"
+            @click="confirmFormatAndOpenConversion"
+          >
+            <span class="format-btn-icon">🚀</span>
+            Convert Now
+          </button>
         </div>
       </div>
-
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="cancelFormatSelection"> Cancel </el-button>
-          <el-button type="primary" @click="confirmFormatAndOpenConversion">
-            Continue
-          </el-button>
-        </div>
-      </template>
-    </el-dialog>
+    </div>
 
     <!-- 格式转换对比面板 -->
-    <el-dialog
-      v-model="showConversionPanel"
-      :title="`Format Conversion • ${conversionTargetName}`"
-      width="1200px"
-      :close-on-click-modal="false"
-      :lock-scroll="true"
-      append-to-body
-      modal-class="conversion-modal"
-      align-center
-      class="conversion-dialog"
-      :class="{ 'fullscreen-mode': isFullscreen }"
-      @close="closeConversionPanel"
+    <div
+      v-if="showConversionPanel"
+      class="conversion-modal-overlay"
+      :style="{ top: `${scrollTop}px` }"
+      @click="closeConversionPanel"
     >
-      <div class="conversion-panel">
-        <!-- 顶部格式选择区域（仅展示当前选择，修改需返回上一步） -->
-        <div class="format-selection readonly">
-          <div class="format-header">
-            <span class="format-icon">🔄</span>
-            <span class="format-title">Convert to format:</span>
+      <div 
+        class="conversion-dialog"
+        :class="{ 'fullscreen-mode': isFullscreen }"
+        @click.stop
+      >
+        <!-- Dialog Header -->
+        <div class="conversion-dialog-header">
+          <div class="conversion-dialog-title">
+            <span class="conversion-title-icon">🔄</span>
+            <div class="conversion-title-content">
+              <h3 class="conversion-title-main">Format Conversion</h3>
+              <p class="conversion-title-sub">{{ conversionTargetName }}</p>
+            </div>
           </div>
-          <div class="format-selected">
-            <el-tag type="info" effect="dark">
-              {{ selectedTargetFormat.toUpperCase() }}
-            </el-tag>
-            <el-button size="small" text type="primary" @click="changeFormat">
-              Change
-            </el-button>
-          </div>
+          <button class="conversion-close-btn" @click="closeConversionPanel">
+            <span class="conversion-close-icon">✕</span>
+          </button>
         </div>
 
-        <!-- 加载状态 -->
-        <div v-if="conversionLoading" class="conversion-loading">
-          <el-icon class="is-loading" size="40px">
-            <Loading />
-          </el-icon>
-          <div class="loading-text">Converting and comparing...</div>
-        </div>
-
-        <!-- 转换结果列表 -->
-        <div v-else-if="conversionResults.length > 0" class="conversion-list">
-          <div
-            v-for="r in conversionResults"
-            :key="`${r.meta.flow}-${r.meta.tool || 'direct'}`"
-            class="conversion-item"
-            :class="{
-              success: r.success,
-              fail: !r.success,
-            }"
-          >
-            <div class="conversion-header">
-              <div class="flow-label">
-                <span
-                  class="flow-badge"
-                  :class="`flow-${r.meta.flow.toLowerCase().replace('→', '-')}`"
-                >
-                  {{
-                    r.meta.flow === 'C→T'
-                      ? 'Compress → Convert'
-                      : r.meta.flow === 'T'
-                        ? 'Convert Only'
-                        : 'Convert → Compress'
-                  }}
-                </span>
-                <span v-if="r.meta.tool" class="tool-name">{{
-                  r.meta.tool
-                }}</span>
+        <!-- Dialog Body -->
+        <div class="conversion-dialog-body">
+          <div class="conversion-panel">
+            <!-- 顶部格式选择区域（仅展示当前选择，修改需返回上一步） -->
+            <div class="format-selection readonly">
+              <div class="format-header">
+                <span class="format-icon">🔄</span>
+                <span class="format-title">Converting to format:</span>
               </div>
-              <div v-if="r.success" class="conversion-metrics">
-                <span class="size">{{ formatFileSize(r.size || 0) }}</span>
-                <span
-                  class="ratio"
-                  :class="{ neg: (r.compressionRatio || 0) < 0 }"
-                >
-                  {{ (r.compressionRatio || 0) < 0 ? '+' : '-'
-                  }}{{ Math.abs(r.compressionRatio || 0).toFixed(1) }}%
-                </span>
-                <span class="duration"
-                  >{{ (r.duration || 0).toFixed(0) }}ms</span
-                >
+              <div class="format-selected">
+                <div class="selected-format-tag">
+                  {{ selectedTargetFormat.toUpperCase() }}
+                </div>
+                <button class="change-format-btn" @click="changeFormat">
+                  Change
+                </button>
               </div>
             </div>
 
-            <div v-if="r.success && r.url" class="conversion-preview">
-              <!-- ICO格式不显示对比slider，因为无法在img标签中正确显示 -->
-              <div v-if="selectedTargetFormat === 'ico'" class="ico-result">
-                <div class="ico-info">
-                  <span class="ico-icon">🔄</span>
-                  <span class="ico-text">ICO file converted successfully</span>
-                  <span class="ico-size">{{
-                    formatFileSize(r.size || 0)
-                  }}</span>
-                </div>
-                <div class="preview-actions">
-                  <button
-                    class="download-btn"
-                    @click="downloadConversionResult(r)"
-                  >
-                    <span class="btn-icon">⬇️</span>
-                    <span class="btn-text">Download</span>
-                  </button>
-                </div>
+            <!-- 加载状态 -->
+            <div v-if="conversionLoading" class="conversion-loading">
+              <div class="loading-spinner">
+                <div class="spinner-ring"></div>
               </div>
+              <div class="loading-text">Converting and comparing...</div>
+            </div>
 
-              <!-- 其他格式显示对比slider -->
-              <div v-else>
-                <div
-                  class="comparison-container"
-                  :class="{ 'conversion-fullscreen-container': isFullscreen }"
-                  :style="{
-                    cursor: imageZoom > 1 ? 'move' : 'default',
-                  }"
-                  @wheel="handleWheel"
-                  @mousedown="handleImageMouseDown"
-                  @mousemove="handleImageMouseMove"
-                  @mouseup="handleImageMouseUp"
-                  @touchstart="handleTouchStart"
-                  @touchend="handleTouchEnd"
-                >
-                  <img-comparison-slider
-                    class="conversion-comparison-slider"
-                    value="50"
-                    @mousedown="handleMouseDown"
-                    @mouseup="handleMouseUp"
-                  >
-                    <!-- eslint-disable -->
-                    <img
-                      slot="first"
-                      :src="originalImageUrl"
-                      alt="Original"
-                      class="comparison-image"
-                      :style="{
-                        transform: `translate(${imageTransform.x}px, ${imageTransform.y}px) scale(${imageZoom})`,
-                        transformOrigin: 'center center',
-                      }"
-                      loading="lazy"
-                      decoding="sync"
-                      @load="handleImageLoad"
-                    />
-                    <img
-                      slot="second"
-                      :src="r.url"
-                      :alt="`${r.meta.flow} result`"
-                      class="comparison-image"
-                      :style="{
-                        transform: `translate(${imageTransform.x}px, ${imageTransform.y}px) scale(${imageZoom})`,
-                        transformOrigin: 'center center',
-                      }"
-                      loading="lazy"
-                      decoding="sync"
-                      @load="handleImageLoad"
-                    />
-                    <!-- eslint-enable -->
-                  </img-comparison-slider>
-
-                  <!-- 图片信息覆盖层 -->
-                  <div
-                    class="image-overlay-info"
-                    :class="{
-                      'mobile-dragging': isMobileDragging,
-                      'pc-dragging': isPCDragging,
-                    }"
-                  >
-                    <div class="overlay-header">
-                      <div class="image-title">
-                        {{ conversionTargetName }} →
-                        {{ selectedTargetFormat.toUpperCase() }}
-                      </div>
-                      <div class="image-controls">
-                        <el-button
-                          circle
-                          size="small"
-                          :disabled="imageZoom <= 0.1"
-                          title="缩小 (-)"
-                          @click="zoomOut"
-                        >
-                          <el-icon>
-                            <ZoomOut />
-                          </el-icon>
-                        </el-button>
-                        <span class="zoom-info"
-                          >{{ Math.round(imageZoom * 100) }}%</span
-                        >
-                        <el-button
-                          circle
-                          size="small"
-                          :disabled="imageZoom >= 5"
-                          title="放大 (+)"
-                          @click="zoomIn"
-                        >
-                          <el-icon>
-                            <ZoomIn />
-                          </el-icon>
-                        </el-button>
-                        <el-button
-                          circle
-                          size="small"
-                          title="重置缩放 (0)"
-                          @click="resetZoom"
-                        >
-                          <el-icon>
-                            <Aim />
-                          </el-icon>
-                        </el-button>
-                        <el-button
-                          circle
-                          size="small"
-                          :title="
-                            isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'
-                          "
-                          @click="toggleFullscreen"
-                        >
-                          <el-icon>
-                            <FullScreen />
-                          </el-icon>
-                        </el-button>
-                      </div>
-                    </div>
-                    <div class="image-details">
-                      <span>{{
+            <!-- 转换结果列表 -->
+            <div v-else-if="conversionResults.length > 0" class="conversion-list">
+              <div
+                v-for="r in conversionResults"
+                :key="`${r.meta.flow}-${r.meta.tool || 'direct'}`"
+                class="conversion-item"
+                :class="{
+                  success: r.success,
+                  fail: !r.success,
+                }"
+              >
+                <div class="conversion-header">
+                  <div class="flow-label">
+                    <span
+                      class="flow-badge"
+                      :class="`flow-${r.meta.flow.toLowerCase().replace('→', '-')}`"
+                    >
+                      {{
                         r.meta.flow === 'C→T'
                           ? 'Compress → Convert'
                           : r.meta.flow === 'T'
                             ? 'Convert Only'
                             : 'Convert → Compress'
+                      }}
+                    </span>
+                    <span v-if="r.meta.tool" class="tool-name">{{
+                      r.meta.tool
+                    }}</span>
+                  </div>
+                  <div v-if="r.success" class="conversion-metrics">
+                    <span class="metric size">{{ formatFileSize(r.size || 0) }}</span>
+                    <span
+                      class="metric ratio"
+                      :class="{ neg: (r.compressionRatio || 0) < 0 }"
+                    >
+                      {{ (r.compressionRatio || 0) < 0 ? '+' : '-'
+                      }}{{ Math.abs(r.compressionRatio || 0).toFixed(1) }}%
+                    </span>
+                    <span class="metric duration"
+                      >{{ (r.duration || 0).toFixed(0) }}ms</span
+                    >
+                  </div>
+                </div>
+
+                <div v-if="r.success && r.url" class="conversion-preview">
+                  <!-- ICO格式不显示对比slider，因为无法在img标签中正确显示 -->
+                  <div v-if="selectedTargetFormat === 'ico'" class="ico-result">
+                    <div class="ico-info">
+                      <span class="ico-icon">🔄</span>
+                      <span class="ico-text">ICO file converted successfully</span>
+                      <span class="ico-size">{{
+                        formatFileSize(r.size || 0)
                       }}</span>
-                      <span v-if="r.meta.tool">Tool: {{ r.meta.tool }}</span>
-                      <span>{{ formatFileSize(r.size || 0) }}</span>
-                      <span
-                        class="savings"
+                    </div>
+                    <div class="preview-actions">
+                      <button
+                        class="conversion-download-btn"
+                        @click="downloadConversionResult(r)"
+                      >
+                        <span class="btn-icon">⬇️</span>
+                        <span class="btn-text">Download</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 其他格式显示对比slider -->
+                  <div v-else>
+                    <div
+                      class="comparison-container"
+                      :class="{ 'conversion-fullscreen-container': isFullscreen }"
+                      :style="{
+                        cursor: imageZoom > 1 ? 'move' : 'default',
+                      }"
+                      @wheel="handleWheel"
+                      @mousedown="handleImageMouseDown"
+                      @mousemove="handleImageMouseMove"
+                      @mouseup="handleImageMouseUp"
+                      @touchstart="handleTouchStart"
+                      @touchend="handleTouchEnd"
+                    >
+                      <img-comparison-slider
+                        class="conversion-comparison-slider"
+                        value="50"
+                        @mousedown="handleMouseDown"
+                        @mouseup="handleMouseUp"
+                      >
+                        <!-- eslint-disable -->
+                        <img
+                          slot="first"
+                          :src="originalImageUrl"
+                          alt="Original"
+                          class="comparison-image"
+                          :style="{
+                            transform: `translate(${imageTransform.x}px, ${imageTransform.y}px) scale(${imageZoom})`,
+                            transformOrigin: 'center center',
+                          }"
+                          loading="lazy"
+                          decoding="sync"
+                          @load="handleImageLoad"
+                        />
+                        <img
+                          slot="second"
+                          :src="r.url"
+                          :alt="`${r.meta.flow} result`"
+                          class="comparison-image"
+                          :style="{
+                            transform: `translate(${imageTransform.x}px, ${imageTransform.y}px) scale(${imageZoom})`,
+                            transformOrigin: 'center center',
+                          }"
+                          loading="lazy"
+                          decoding="sync"
+                          @load="handleImageLoad"
+                        />
+                        <!-- eslint-enable -->
+                      </img-comparison-slider>
+
+                      <!-- 图片信息覆盖层 -->
+                      <div
+                        class="image-overlay-info"
                         :class="{
-                          'savings-negative': (r.compressionRatio || 0) < 0,
+                          'mobile-dragging': isMobileDragging,
+                          'pc-dragging': isPCDragging,
                         }"
                       >
-                        ({{ (r.compressionRatio || 0) < 0 ? '+' : '-'
-                        }}{{ Math.abs(r.compressionRatio || 0).toFixed(1) }}%)
-                      </span>
+                        <div class="overlay-header">
+                          <div class="image-title">
+                            {{ conversionTargetName }} →
+                            {{ selectedTargetFormat.toUpperCase() }}
+                          </div>
+                          <div class="image-controls">
+                            <button
+                              class="control-btn"
+                              :disabled="imageZoom <= 0.1"
+                              title="缩小 (-)"
+                              @click="zoomOut"
+                            >
+                              <span>−</span>
+                            </button>
+                            <span class="zoom-info"
+                              >{{ Math.round(imageZoom * 100) }}%</span
+                            >
+                            <button
+                              class="control-btn"
+                              :disabled="imageZoom >= 5"
+                              title="放大 (+)"
+                              @click="zoomIn"
+                            >
+                              <span>+</span>
+                            </button>
+                            <button
+                              class="control-btn"
+                              title="重置缩放 (0)"
+                              @click="resetZoom"
+                            >
+                              <span>⌂</span>
+                            </button>
+                            <button
+                              class="control-btn"
+                              :title="
+                                isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'
+                              "
+                              @click="toggleFullscreen"
+                            >
+                              <span>⛶</span>
+                            </button>
+                          </div>
+                        </div>
+                        <div class="image-details">
+                          <span>{{
+                            r.meta.flow === 'C→T'
+                              ? 'Compress → Convert'
+                              : r.meta.flow === 'T'
+                                ? 'Convert Only'
+                                : 'Convert → Compress'
+                          }}</span>
+                          <span v-if="r.meta.tool">Tool: {{ r.meta.tool }}</span>
+                          <span>{{ formatFileSize(r.size || 0) }}</span>
+                          <span
+                            class="savings"
+                            :class="{
+                              'savings-negative': (r.compressionRatio || 0) < 0,
+                            }"
+                          >
+                            ({{ (r.compressionRatio || 0) < 0 ? '+' : '-'
+                            }}{{ Math.abs(r.compressionRatio || 0).toFixed(1) }}%)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="preview-actions">
+                      <button
+                        class="conversion-download-btn"
+                        @click="downloadConversionResult(r)"
+                      >
+                        <span class="btn-icon">⬇️</span>
+                        <span class="btn-text">Download</span>
+                      </button>
                     </div>
                   </div>
                 </div>
-                <div class="preview-actions">
-                  <button
-                    class="download-btn"
-                    @click="downloadConversionResult(r)"
-                  >
-                    <span class="btn-icon">⬇️</span>
-                    <span class="btn-text">Download</span>
-                  </button>
+
+                <div v-if="!r.success" class="conversion-error">
+                  <span class="error-icon">❌</span>
+                  <span class="error-message">{{
+                    r.error || 'Conversion failed'
+                  }}</span>
                 </div>
               </div>
             </div>
 
-            <div v-if="!r.success" class="conversion-error">
-              <span class="error-icon">❌</span>
-              <span class="error-message">{{
-                r.error || 'Conversion failed'
-              }}</span>
+            <!-- 空状态 -->
+            <div v-else-if="!conversionLoading" class="conversion-empty">
+              <div class="empty-icon">🔄</div>
+              <div class="empty-text">No conversion results available</div>
             </div>
           </div>
         </div>
 
-        <!-- 空状态 -->
-        <div v-else-if="!conversionLoading" class="conversion-empty">
-          <div class="empty-icon">🔄</div>
-          <div class="empty-text">No conversion results available</div>
+        <!-- Dialog Footer -->
+        <div class="conversion-dialog-footer">
+          <button class="conversion-btn conversion-btn-secondary" @click="closeConversionPanel">
+            Close
+          </button>
         </div>
       </div>
-
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="closeConversionPanel"> Close </el-button>
-        </div>
-      </template>
-    </el-dialog>
+    </div>
   </div>
 </template>
 
@@ -316,20 +359,9 @@
 import type { TargetFormat } from '../../../src/conversion'
 import type { ConversionCompareItem } from '../../../src/orchestrators/compareConversion'
 import { ElMessage } from 'element-plus'
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { buildConversionColumn } from '../../../src/orchestrators/compareConversion'
-import {
-  // @ts-ignore
-  Aim,
-  // @ts-ignore
-  FullScreen,
-  // @ts-ignore
-  Loading,
-  // @ts-ignore
-  ZoomIn,
-  // @ts-ignore
-  ZoomOut,
-} from '@element-plus/icons-vue'
+// Remove unused Element Plus imports
 import 'img-comparison-slider/dist/styles.css'
 
 // 导入 img-comparison-slider
@@ -366,6 +398,34 @@ let conversionObjectUrls: string[] = []
 const originalImageUrl = ref('')
 const selectedTargetFormat = ref<TargetFormat>('webp')
 
+// 格式选项配置
+const formatOptions = [
+  {
+    value: 'png' as TargetFormat,
+    name: 'PNG',
+    icon: '🖼️',
+    description: 'Lossless compression with transparency support',
+  },
+  {
+    value: 'jpeg' as TargetFormat,
+    name: 'JPEG',
+    icon: '📷',
+    description: 'Best for photos with smaller file sizes',
+  },
+  {
+    value: 'webp' as TargetFormat,
+    name: 'WebP',
+    icon: '🚀',
+    description: 'Modern format with excellent compression',
+  },
+  {
+    value: 'ico' as TargetFormat,
+    name: 'ICO',
+    icon: '🔸',
+    description: 'Icon format for web and desktop apps',
+  },
+]
+
 // 图片缩放和全屏状态
 const imageZoom = ref(1) // 图片缩放比例
 const isFullscreen = ref(false) // 全屏状态
@@ -382,6 +442,20 @@ const targetImageItem = ref<{
   quality: number
 } | null>(null)
 const targetImageName = ref('')
+
+// 滚动位置状态
+const scrollTop = ref(0)
+const appContainer = ref<HTMLElement | null>(null)
+
+// 恢复滚动状态的统一函数
+function restoreScrollState() {
+  // 恢复app-container滚动
+  if (appContainer.value) {
+    appContainer.value.style.removeProperty('overflow')
+    // 恢复之前的滚动位置
+    appContainer.value.scrollTop = scrollTop.value
+  }
+}
 
 // 格式化文件大小
 function formatFileSize(bytes: number): string {
@@ -400,11 +474,27 @@ function openFormatSelectDialog(item: {
 }) {
   targetImageItem.value = item
   targetImageName.value = item.file.name
+
+  // 获取app-container元素
+  appContainer.value = document.querySelector('.app-container') as HTMLElement
+
+  if (appContainer.value) {
+    // 获取当前滚动位置
+    scrollTop.value = appContainer.value.scrollTop
+
+    // 禁用app-container的滚动
+    appContainer.value.style.setProperty('overflow', 'hidden', 'important')
+  }
+
   showFormatSelectDialog.value = true
 }
 
 function confirmFormatAndOpenConversion() {
   showFormatSelectDialog.value = false
+
+  // 使用统一函数恢复滚动状态
+  restoreScrollState()
+
   if (targetImageItem.value) {
     openConversionPanel(targetImageItem.value)
   }
@@ -414,11 +504,17 @@ function cancelFormatSelection() {
   showFormatSelectDialog.value = false
   targetImageItem.value = null
   targetImageName.value = ''
+
+  // 使用统一函数恢复滚动状态
+  restoreScrollState()
 }
 
 function changeFormat() {
   showConversionPanel.value = false
   showFormatSelectDialog.value = true
+
+  // 格式选择对话框已经显示，保持滚动条禁用状态
+  // 不需要额外的滚动条控制，因为从一个对话框切换到另一个对话框
 }
 
 function cleanupConversionObjectUrls() {
@@ -497,6 +593,9 @@ function closeConversionPanel() {
   showConversionPanel.value = false
   // 关闭时清理生成的对象URL，避免内存泄漏
   cleanupConversionObjectUrls()
+
+  // 使用统一函数恢复滚动状态
+  restoreScrollState()
 }
 
 // 下载转换结果
@@ -718,6 +817,13 @@ function handleImageMouseUp() {
 
 // 键盘事件处理
 function handleKeydown(e: KeyboardEvent) {
+  // 处理格式选择对话框的ESC键
+  if (e.key === 'Escape' && showFormatSelectDialog.value) {
+    cancelFormatSelection()
+    return
+  }
+
+  // 处理转换面板的键盘快捷键
   if (!showConversionPanel.value || !isFullscreen.value) return
 
   switch (e.key) {
@@ -795,6 +901,21 @@ function handleWindowResize() {
   }
 }
 
+// 组件挂载时添加键盘事件监听
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown)
+  window.addEventListener('resize', handleWindowResize)
+})
+
+// 组件卸载时移除事件监听
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('resize', handleWindowResize)
+
+  // 组件卸载时确保恢复滚动状态
+  restoreScrollState()
+})
+
 // 暴露给父组件的方法
 defineExpose({
   openFormatSelectDialog,
@@ -806,32 +927,620 @@ defineExpose({
   position: relative;
 }
 
-.format-select-panel {
-  padding: 16px 0;
-}
-
-.format-select-header {
+/* 自定义格式选择对话框样式 */
+.format-select-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100vh;
+  background: 
+    radial-gradient(circle at 50% 30%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+    rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeIn 0.25s ease-out;
 }
 
-.format-icon {
-  font-size: 24px;
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(12px);
+  }
 }
 
-.format-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #374151;
+.format-select-dialog {
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(20px);
+  border-radius: 24px;
+  width: 620px;
+  max-width: 90vw;
+  max-height: 90vh;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 32px 100px rgba(99, 102, 241, 0.15),
+    0 16px 40px rgba(99, 102, 241, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.05);
+  animation: slideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow: hidden;
 }
 
-.format-options .el-radio-group {
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 20px, 0) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.format-dialog-header {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 28px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  margin-bottom: 24px;
+}
+
+.format-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.format-title-icon {
+  font-size: 32px;
+  animation: rotate 3s ease-in-out infinite;
+  filter: drop-shadow(0 3px 6px rgba(99, 102, 241, 0.2));
+}
+
+@keyframes rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(90deg) scale(1.05);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.1);
+  }
+  75% {
+    transform: rotate(270deg) scale(1.05);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+.format-title-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.format-title-main {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f2937;
+  letter-spacing: -0.025em;
+  background: linear-gradient(135deg, #1f2937 0%, #6366f1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.format-title-sub {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+  opacity: 0.85;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(107, 114, 128, 0.08);
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(107, 114, 128, 0.1);
+}
+
+.format-close-btn {
+  background: rgba(249, 250, 251, 0.8);
+  border: 1px solid rgba(209, 213, 219, 0.3);
+  border-radius: 14px;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+}
+
+.format-close-btn:hover {
+  background: rgba(243, 244, 246, 0.9);
+  border-color: rgba(209, 213, 219, 0.5);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.format-close-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.format-close-icon {
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.format-select-content {
+  padding: 0 28px 28px;
+}
+
+.format-select-description {
+  font-size: 15px;
+  color: #6b7280;
+  margin-bottom: 28px;
+  line-height: 1.6;
+  font-weight: 500;
+}
+
+.format-options-grid {
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 16px;
 }
 
+.format-option-card {
+  background: linear-gradient(135deg, #ffffff 0%, #fafbfc 100%);
+  border: 2px solid rgba(229, 231, 235, 0.5);
+  border-radius: 18px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.format-option-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.08) 0%,
+    rgba(139, 92, 246, 0.06) 100%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.format-option-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.4),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.format-option-card:hover::after {
+  left: 100%;
+}
+
+.format-option-card:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 12px 32px rgba(99, 102, 241, 0.12);
+  transform: translateY(-3px);
+}
+
+.format-option-card:hover::before {
+  opacity: 1;
+}
+
+.format-option-card.active {
+  border-color: #6366f1;
+  background: linear-gradient(135deg, #ffffff 0%, #f1f3ff 100%);
+  box-shadow: 0 12px 40px rgba(99, 102, 241, 0.25);
+  transform: translateY(-2px);
+}
+
+.format-option-card.active::before {
+  opacity: 1;
+}
+
+.format-option-card.active::after {
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { left: -100%; }
+  50% { left: 100%; }
+  100% { left: 100%; }
+}
+
+.format-option-icon {
+  font-size: 38px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12));
+  transition: all 0.3s ease;
+}
+
+.format-option-card:hover .format-option-icon {
+  transform: scale(1.05);
+  filter: drop-shadow(0 4px 8px rgba(99, 102, 241, 0.15));
+}
+
+.format-option-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.format-option-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1f2937;
+  letter-spacing: -0.025em;
+}
+
+.format-option-desc {
+  font-size: 14px;
+  color: #6b7280;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.format-option-check {
+  flex-shrink: 0;
+}
+
+.format-check-circle {
+  width: 28px;
+  height: 28px;
+  border: 2px solid #d1d5db;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.format-option-card.active .format-check-circle {
+  border-color: #6366f1;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.format-check-mark {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  animation: checkPulse 0.4s ease-out;
+}
+
+@keyframes checkPulse {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.format-dialog-footer {
+  padding: 24px 28px 28px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(248, 250, 252, 0.5) 100%
+  );
+}
+
+.format-btn {
+  border: none;
+  border-radius: 14px;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  backdrop-filter: blur(10px);
+  min-width: 120px;
+  justify-content: center;
+}
+
+.format-btn-secondary {
+  background: rgba(249, 250, 251, 0.8);
+  color: #6b7280;
+  border: 1px solid rgba(209, 213, 219, 0.4);
+}
+
+.format-btn-secondary:hover {
+  background: rgba(243, 244, 246, 0.9);
+  color: #4b5563;
+  border-color: rgba(156, 163, 175, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(156, 163, 175, 0.15);
+}
+
+.format-btn-primary {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: #ffffff;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35);
+}
+
+.format-btn-primary:hover {
+  background: linear-gradient(135deg, #5b5bf6 0%, #7c3aed 100%);
+  box-shadow: 0 10px 32px rgba(99, 102, 241, 0.45);
+  transform: translateY(-3px);
+}
+
+.format-btn-primary:active {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.5);
+}
+
+.format-btn-secondary:active {
+  transform: translateY(0px);
+  box-shadow: 0 2px 6px rgba(156, 163, 175, 0.2);
+}
+
+.format-btn-icon {
+  font-size: 16px;
+  transition: transform 0.2s ease;
+}
+
+.format-btn-primary:hover .format-btn-icon {
+  transform: scale(1.1);
+}
+
+/* 响应式设计 */
+@media (max-width: 640px) {
+  .format-select-dialog {
+    width: 95vw;
+    margin: 20px;
+    border-radius: 20px;
+  }
+
+  .format-dialog-header {
+    padding: 24px 24px 0;
+  }
+
+  .format-select-content {
+    padding: 0 24px 24px;
+  }
+
+  .format-select-description {
+    font-size: 14px;
+    margin-bottom: 24px;
+  }
+
+  .format-options-grid {
+    gap: 14px;
+  }
+
+  .format-dialog-footer {
+    padding: 20px 24px 24px;
+    flex-direction: column-reverse;
+  }
+
+  .format-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 16px 24px;
+  }
+
+  .format-title-main {
+    font-size: 18px;
+  }
+
+  .format-option-card {
+    padding: 18px;
+    gap: 16px;
+  }
+
+  .format-option-icon {
+    font-size: 34px;
+  }
+
+  .format-option-name {
+    font-size: 16px;
+  }
+
+  .format-option-desc {
+    font-size: 13px;
+  }
+
+  .format-check-circle {
+    width: 26px;
+    height: 26px;
+  }
+}
+
+/* Conversion Modal Overlay */
+.conversion-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100vh;
+  background: 
+    radial-gradient(circle at 50% 30%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+    rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeIn 0.25s ease-out;
+}
+
+/* Conversion Dialog */
+.conversion-dialog {
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(20px);
+  border-radius: 24px;
+  width: 1200px;
+  max-width: 95vw;
+  max-height: 90vh;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 32px 100px rgba(99, 102, 241, 0.15),
+    0 16px 40px rgba(99, 102, 241, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.05);
+  animation: slideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Dialog Header */
+.conversion-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 28px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  margin-bottom: 24px;
+}
+
+.conversion-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.conversion-title-icon {
+  font-size: 32px;
+  animation: rotate 3s ease-in-out infinite;
+  filter: drop-shadow(0 3px 6px rgba(99, 102, 241, 0.2));
+}
+
+.conversion-title-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.conversion-title-main {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f2937;
+  letter-spacing: -0.025em;
+  background: linear-gradient(135deg, #1f2937 0%, #6366f1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.conversion-title-sub {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+  opacity: 0.85;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(107, 114, 128, 0.08);
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(107, 114, 128, 0.1);
+}
+
+.conversion-close-btn {
+  background: rgba(249, 250, 251, 0.8);
+  border: 1px solid rgba(209, 213, 219, 0.3);
+  border-radius: 14px;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+}
+
+.conversion-close-btn:hover {
+  background: rgba(243, 244, 246, 0.9);
+  border-color: rgba(209, 213, 219, 0.5);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.conversion-close-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.conversion-close-icon {
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+/* Dialog Body */
+.conversion-dialog-body {
+  padding: 0 28px 28px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Format Selection */
 .format-selection {
   margin-bottom: 24px;
   padding: 20px;
@@ -842,6 +1551,7 @@ defineExpose({
   );
   border-radius: 16px;
   border: 1px solid rgba(102, 126, 234, 0.2);
+  backdrop-filter: blur(10px);
 }
 
 .format-header {
@@ -857,6 +1567,36 @@ defineExpose({
   gap: 12px;
 }
 
+.selected-format-tag {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 8px 16px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+}
+
+.change-format-btn {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #6366f1;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.change-format-btn:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.5);
+  transform: translateY(-1px);
+}
+
 .conversion-panel {
   min-height: 300px;
 }
@@ -867,27 +1607,88 @@ defineExpose({
   align-items: center;
   justify-content: center;
   padding: 60px 20px;
-  gap: 16px;
+  gap: 20px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(248, 250, 252, 0.05)
+  );
+  border-radius: 16px;
+  border: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.loading-spinner {
+  position: relative;
+  width: 60px;
+  height: 60px;
+}
+
+.spinner-ring {
+  width: 100%;
+  height: 100%;
+  border: 4px solid rgba(99, 102, 241, 0.2);
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .conversion-loading .loading-text {
-  font-size: 14px;
-  color: #6b7280;
+  font-size: 16px;
+  color: #374151;
+  font-weight: 600;
 }
 
 .conversion-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .conversion-item {
-  border-radius: 16px;
+  border-radius: 18px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(102, 126, 234, 0.2);
-  transition: all 0.3s ease;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.95),
+    rgba(248, 250, 252, 0.95)
+  );
+  backdrop-filter: blur(20px);
+  border: 2px solid rgba(102, 126, 234, 0.15);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.conversion-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(99, 102, 241, 0.1),
+    transparent
+  );
+  transition: left 0.6s;
+}
+
+.conversion-item:hover::before {
+  left: 100%;
+}
+
+.conversion-item:hover {
+  transform: translateY(-4px);
+  border-color: rgba(99, 102, 241, 0.3);
+  box-shadow: 0 16px 40px rgba(99, 102, 241, 0.15);
 }
 
 .conversion-item.success {
@@ -903,13 +1704,15 @@ defineExpose({
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px;
+  padding: 20px;
   background: linear-gradient(
     135deg,
-    rgba(248, 250, 252, 0.8),
-    rgba(241, 245, 249, 0.8)
+    rgba(248, 250, 252, 0.9),
+    rgba(241, 245, 249, 0.9)
   );
-  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+  border-bottom: 1px solid rgba(102, 126, 234, 0.15);
+  position: relative;
+  z-index: 1;
 }
 
 .flow-label {
@@ -953,33 +1756,55 @@ defineExpose({
 .conversion-metrics {
   display: flex;
   align-items: center;
-  gap: 16px;
-  font-size: 13px;
+  gap: 12px;
+  font-size: 12px;
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
 }
 
-.conversion-metrics .size {
+.conversion-metrics .metric {
+  background: rgba(255, 255, 255, 0.8);
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
   font-weight: 600;
+  backdrop-filter: blur(5px);
+  transition: all 0.2s ease;
+}
+
+.conversion-metrics .metric:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.conversion-metrics .metric.size {
   color: #374151;
 }
 
-.conversion-metrics .ratio {
-  font-weight: 600;
-  color: #10b981;
+.conversion-metrics .metric.ratio {
+  color: #059669;
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
 }
 
-.conversion-metrics .ratio.neg {
-  color: #ef4444;
+.conversion-metrics .metric.ratio.neg {
+  color: #dc2626;
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
-.conversion-metrics .duration {
-  color: #6b7280;
+.conversion-metrics .metric.duration {
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.3);
 }
 
 .conversion-preview {
-  padding: 16px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  position: relative;
+  z-index: 1;
 }
 
 .comparison-container {
@@ -1103,47 +1928,200 @@ defineExpose({
   color: #6b7280;
 }
 
-/* Download result button */
-.download-btn {
-  background: linear-gradient(135deg, #059669 0%, #047857 100%);
-  color: white;
-  border: none;
+/* Control Buttons */
+.control-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(5, 150, 105, 0.3);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 8px 16px;
+  width: 32px;
+  height: 32px;
+  color: white;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.download-btn:hover {
-  background: linear-gradient(135deg, #047857 0%, #065f46 100%);
-  box-shadow: 0 8px 24px rgba(5, 150, 105, 0.4);
-  transform: translateY(-1px);
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.35);
+  transform: scale(1.05);
 }
 
-.download-btn:active {
-  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.5);
+.control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.control-btn:disabled:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: none;
+}
+
+/* Download Button */
+.conversion-download-btn {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.3);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.conversion-download-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  transition: left 0.6s;
+}
+
+.conversion-download-btn:hover::before {
+  left: 100%;
+}
+
+.conversion-download-btn:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);
+  transform: translateY(-2px);
+}
+
+.conversion-download-btn:active {
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.5);
   transform: translateY(0);
 }
 
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
+.conversion-download-btn .btn-icon {
+  font-size: 14px;
+  transition: transform 0.2s ease;
 }
 
-:global(.conversion-modal .el-dialog) {
-  border-radius: 20px;
-  overflow: hidden;
-  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-  border: 1px solid rgba(102, 126, 234, 0.2);
-  box-shadow: 0 25px 80px rgba(102, 126, 234, 0.2);
-  backdrop-filter: blur(20px);
+.conversion-download-btn:hover .btn-icon {
+  transform: scale(1.1);
+}
+
+/* Dialog Footer */
+.conversion-dialog-footer {
+  padding: 24px 28px 28px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(248, 250, 252, 0.5) 100%
+  );
+}
+
+.conversion-btn {
+  border: none;
+  border-radius: 14px;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  backdrop-filter: blur(10px);
+  min-width: 120px;
+  justify-content: center;
+}
+
+.conversion-btn-secondary {
+  background: rgba(249, 250, 251, 0.8);
+  color: #6b7280;
+  border: 1px solid rgba(209, 213, 219, 0.4);
+}
+
+.conversion-btn-secondary:hover {
+  background: rgba(243, 244, 246, 0.9);
+  color: #4b5563;
+  border-color: rgba(156, 163, 175, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(156, 163, 175, 0.15);
+}
+
+.conversion-btn-secondary:active {
+  transform: translateY(0px);
+  box-shadow: 0 2px 6px rgba(156, 163, 175, 0.2);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .conversion-dialog {
+    width: 95vw;
+    margin: 20px;
+    border-radius: 20px;
+  }
+
+  .conversion-dialog-header {
+    padding: 24px 24px 0;
+  }
+
+  .conversion-dialog-body {
+    padding: 0 24px 24px;
+  }
+
+  .conversion-dialog-footer {
+    padding: 20px 24px 24px;
+    flex-direction: column-reverse;
+  }
+
+  .conversion-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .conversion-metrics {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .conversion-metrics .metric {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+
+  .image-controls {
+    gap: 4px;
+  }
+
+  .control-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+
+  .zoom-info {
+    font-size: 10px;
+    min-width: 28px;
+  }
 }
 
 /* 全局防闪烁规则 */
@@ -1188,12 +2166,90 @@ img-comparison-slider img,
   box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
 }
 
-/* 转换对比面板响应式设计 */
-@media (max-width: 1024px) {
-  :global(.conversion-modal .el-dialog) {
-    margin: 20px;
-    width: calc(100vw - 40px) !important;
-    max-width: none !important;
+/* 新增中等屏幕适配 */
+@media (max-width: 768px) {
+  .format-select-dialog {
+    width: 92vw;
+    border-radius: 18px;
   }
+
+  .format-dialog-header {
+    padding: 22px 22px 0;
+  }
+
+  .format-select-content {
+    padding: 0 22px 22px;
+  }
+
+  .format-dialog-footer {
+    padding: 18px 22px 22px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .conversion-dialog {
+    width: 90vw;
+    max-width: 900px;
+  }
+
+  .conversion-item {
+    margin-bottom: 16px;
+  }
+
+  .conversion-metrics {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+/* Additional improvements */
+.conversion-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 16px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(248, 250, 252, 0.05)
+  );
+  border-radius: 16px;
+  border: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.conversion-empty .empty-icon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+
+.conversion-empty .empty-text {
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.conversion-error {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 12px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  position: relative;
+  z-index: 1;
+}
+
+.conversion-error .error-icon {
+  font-size: 16px;
+}
+
+.conversion-error .error-message {
+  font-size: 14px;
+  font-weight: 500;
 }
 </style>
