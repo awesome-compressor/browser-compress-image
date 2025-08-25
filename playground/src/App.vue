@@ -3185,7 +3185,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
             <div v-if="r.success && r.url" class="conversion-preview">
               <div class="comparison-container">
                 <img-comparison-slider
-                  class="conversion-comparison-slider comparison-slider-fullscreen"
+                  class="conversion-comparison-slider"
                   value="50"
                 >
                   <!-- eslint-disable -->
@@ -3193,7 +3193,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                     slot="first"
                     :src="imageItems[conversionTargetIndex]?.originalUrl"
                     alt="Original"
-                    class="comparison-image comparison-image-fullscreen"
+                    class="comparison-image"
                     loading="lazy"
                     decoding="sync"
                   />
@@ -3201,7 +3201,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                     slot="second"
                     :src="r.url"
                     :alt="`${r.meta.flow} result`"
-                    class="comparison-image comparison-image-fullscreen"
+                    class="comparison-image"
                     loading="lazy"
                     decoding="sync"
                   />
@@ -4441,6 +4441,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 .conversion-comparison-slider {
   width: 100%;
   height: 100%;
+  position:relative;
+  overflow: hidden;
   --divider-width: 3px;
   --divider-color: rgba(255, 255, 255, 0.8);
   --default-handle-width: 48px;
@@ -4449,11 +4451,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
 .conversion-comparison-slider .comparison-image {
   width: 100%;
-  height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   display: block;
   /* Safari 兼容性 - object-fit 支持 */
-  -o-object-fit: contain;
+  -o-object-fit: cover;
   /* 渲染优化 */
   transform: translateZ(0);
 }
