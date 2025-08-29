@@ -80,7 +80,7 @@
       :style="{ top: `${scrollTop}px` }"
       @click="closeConversionPanel"
     >
-      <div 
+      <div
         class="conversion-dialog"
         :class="{ 'fullscreen-mode': isFullscreen }"
         @click.stop
@@ -127,7 +127,10 @@
             </div>
 
             <!-- 转换结果列表 -->
-            <div v-else-if="conversionResults.length > 0" class="conversion-list">
+            <div
+              v-else-if="conversionResults.length > 0"
+              class="conversion-list"
+            >
               <div
                 v-for="r in conversionResults"
                 :key="`${r.meta.flow}-${r.meta.tool || 'direct'}`"
@@ -156,7 +159,9 @@
                     }}</span>
                   </div>
                   <div v-if="r.success" class="conversion-metrics">
-                    <span class="metric size">{{ formatFileSize(r.size || 0) }}</span>
+                    <span class="metric size">{{
+                      formatFileSize(r.size || 0)
+                    }}</span>
                     <span
                       class="metric ratio"
                       :class="{ neg: (r.compressionRatio || 0) < 0 }"
@@ -175,7 +180,9 @@
                   <div v-if="selectedTargetFormat === 'ico'" class="ico-result">
                     <div class="ico-info">
                       <span class="ico-icon">🔄</span>
-                      <span class="ico-text">ICO file converted successfully</span>
+                      <span class="ico-text"
+                        >ICO file converted successfully</span
+                      >
                       <span class="ico-size">{{
                         formatFileSize(r.size || 0)
                       }}</span>
@@ -195,7 +202,9 @@
                   <div v-else>
                     <div
                       class="comparison-container"
-                      :class="{ 'conversion-fullscreen-container': isFullscreen }"
+                      :class="{
+                        'conversion-fullscreen-container': isFullscreen,
+                      }"
                       :style="{
                         cursor: imageZoom > 1 ? 'move' : 'default',
                       }"
@@ -285,7 +294,9 @@
                             <button
                               class="control-btn"
                               :title="
-                                isFullscreen ? '退出全屏 (Esc)' : '全屏 (Ctrl+F)'
+                                isFullscreen
+                                  ? '退出全屏 (Esc)'
+                                  : '全屏 (Ctrl+F)'
                               "
                               @click="toggleFullscreen"
                             >
@@ -301,7 +312,9 @@
                                 ? 'Convert Only'
                                 : 'Convert → Compress'
                           }}</span>
-                          <span v-if="r.meta.tool">Tool: {{ r.meta.tool }}</span>
+                          <span v-if="r.meta.tool"
+                            >Tool: {{ r.meta.tool }}</span
+                          >
                           <span>{{ formatFileSize(r.size || 0) }}</span>
                           <span
                             class="savings"
@@ -310,7 +323,9 @@
                             }"
                           >
                             ({{ (r.compressionRatio || 0) < 0 ? '+' : '-'
-                            }}{{ Math.abs(r.compressionRatio || 0).toFixed(1) }}%)
+                            }}{{
+                              Math.abs(r.compressionRatio || 0).toFixed(1)
+                            }}%)
                           </span>
                         </div>
                       </div>
@@ -346,7 +361,10 @@
 
         <!-- Dialog Footer -->
         <div class="conversion-dialog-footer">
-          <button class="conversion-btn conversion-btn-secondary" @click="closeConversionPanel">
+          <button
+            class="conversion-btn conversion-btn-secondary"
+            @click="closeConversionPanel"
+          >
             Close
           </button>
         </div>
@@ -446,6 +464,7 @@ const targetImageName = ref('')
 // 滚动位置状态
 const scrollTop = ref(0)
 const appContainer = ref<HTMLElement | null>(null)
+const appElement = ref<HTMLElement | null>(null)
 
 // 恢复滚动状态的统一函数
 function restoreScrollState() {
@@ -454,6 +473,9 @@ function restoreScrollState() {
     appContainer.value.style.removeProperty('overflow')
     // 恢复之前的滚动位置
     appContainer.value.scrollTop = scrollTop.value
+  }
+  if (appElement.value) {
+    appElement.value.style.removeProperty('overflow')
   }
 }
 
@@ -477,13 +499,16 @@ function openFormatSelectDialog(item: {
 
   // 获取app-container元素
   appContainer.value = document.querySelector('.app-container') as HTMLElement
+  appElement.value = document.querySelector('#app') as HTMLElement
 
   if (appContainer.value) {
     // 获取当前滚动位置
-    scrollTop.value = appContainer.value.scrollTop
-
+    scrollTop.value = appContainer.value.scrollTop || appElement.value.scrollTop
     // 禁用app-container的滚动
     appContainer.value.style.setProperty('overflow', 'hidden', 'important')
+  }
+  if (appElement.value) {
+    appElement.value.style.setProperty('overflow', 'hidden', 'important')
   }
 
   showFormatSelectDialog.value = true
@@ -935,8 +960,12 @@ defineExpose({
   right: 0;
   bottom: 0;
   height: 100vh;
-  background: 
-    radial-gradient(circle at 50% 30%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+  background:
+    radial-gradient(
+      circle at 50% 30%,
+      rgba(99, 102, 241, 0.08) 0%,
+      transparent 50%
+    ),
     rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(12px);
   display: flex;
@@ -998,6 +1027,9 @@ defineExpose({
   align-items: center;
   gap: 16px;
   margin-bottom: 8px;
+  width: 100%;
+  padding: 0 8px;
+  overflow: hidden;
 }
 
 .format-title-icon {
@@ -1028,6 +1060,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
+  overflow: hidden;
 }
 
 .format-title-main {
@@ -1184,9 +1218,15 @@ defineExpose({
 }
 
 @keyframes shimmer {
-  0% { left: -100%; }
-  50% { left: 100%; }
-  100% { left: 100%; }
+  0% {
+    left: -100%;
+  }
+  50% {
+    left: 100%;
+  }
+  100% {
+    left: 100%;
+  }
 }
 
 .format-option-icon {
@@ -1414,8 +1454,12 @@ defineExpose({
   right: 0;
   bottom: 0;
   height: 100vh;
-  background: 
-    radial-gradient(circle at 50% 30%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+  background:
+    radial-gradient(
+      circle at 50% 30%,
+      rgba(99, 102, 241, 0.08) 0%,
+      transparent 50%
+    ),
     rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(12px);
   display: flex;
@@ -1891,6 +1935,7 @@ defineExpose({
   display: flex;
   justify-content: center;
   gap: 8px;
+  margin-top: 8px;
 }
 
 .conversion-error {
