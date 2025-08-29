@@ -556,6 +556,19 @@ async function openConversionPanel(item: {
   originalUrl: string
   quality: number
 }) {
+  // 获取app-container元素
+  appContainer.value = document.querySelector('.app-container') as HTMLElement
+  appElement.value = document.querySelector('#app') as HTMLElement
+
+  if (appContainer.value) {
+    // 获取当前滚动位置
+    scrollTop.value = appContainer.value.scrollTop || appElement.value.scrollTop
+    // 禁用app-container的滚动
+    appContainer.value.style.setProperty('overflow', 'hidden', 'important')
+  }
+  if (appElement.value) {
+    appElement.value.style.setProperty('overflow', 'hidden', 'important')
+  }
   showConversionPanel.value = true
   conversionLoading.value = true
   conversionTargetName.value = item.file.name
@@ -2240,8 +2253,10 @@ img-comparison-slider img,
   .conversion-item {
     margin-bottom: 16px;
   }
+}
 
-  .conversion-metrics {
+@media (max-width: 650px) {
+  .conversion-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
