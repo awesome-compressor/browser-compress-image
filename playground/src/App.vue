@@ -328,11 +328,20 @@ const tempToolConfigs = ref<ToolConfig[]>([])
 function openSettingsPanel() {
   tempToolConfigs.value = JSON.parse(JSON.stringify(toolConfigs.value))
   showSettingsPanel.value = true
+
+  const appContainer = document.querySelector('.app-container') as HTMLElement
+  if (appContainer) {
+    appContainer.style.overflow = 'hidden' // 禁用页面滚动
+  }
 }
 
 // 关闭设置面板时，不保存临时配置的更改
 function closeSettingsPanel() {
   showSettingsPanel.value = false
+  const appContainer = document.querySelector('.app-container') as HTMLElement
+  if (appContainer) {
+    appContainer.style.overflow = '' // 恢复页面滚动
+  }
   // 不更新 toolConfigs，保持原有配置
 }
 
@@ -2776,19 +2785,6 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 </span>
               </span>
             </div>
-          </div>
-          <div v-if="compareBestTool" class="summary-actions">
-            <button
-              class="custom-btn best-btn"
-              @click="
-                applyCompareResult(
-                  compareResults.find((r) => r.tool === compareBestTool)!,
-                )
-              "
-            >
-              <span class="btn-icon">✨</span>
-              <span class="btn-text">Use Best Result</span>
-            </button>
           </div>
         </div>
 
