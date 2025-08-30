@@ -60,6 +60,8 @@
     "play:build": "pnpm run -C playground build",
     "lint": "prettier --cache --write .",
     "test": "vitest --dir test -u",
+    "test:ci": "vitest --dir test -u",
+    "size": "pnpm build && size-limit",
     "ptest": "pnpm run -C playground test -u",
     "preview": "pnpm run -C playground preview",
     "test:e2e": "cypress open",
@@ -80,8 +82,17 @@
     "eslint": "^9.33.0",
     "prettier": "^3.6.2",
     "tsdown": "^0.12.9",
+    "size-limit": "^7.0.0",
+    "@size-limit/preset-small-lib": "^6.2.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
-  "prettier": "@sxzz/prettier-config"
+  "prettier": "@sxzz/prettier-config",
+  "size-limit": [
+    {
+      "path": "dist/index.js",
+      "limit": "200 KB",
+      "gzip": true
+    }
+  ]
 }

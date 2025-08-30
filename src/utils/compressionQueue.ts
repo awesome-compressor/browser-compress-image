@@ -40,17 +40,27 @@ export class PerformanceDetector {
   detectDevice() {
     if (this.deviceInfo) return this.deviceInfo
 
-    // Detect if mobile device
+    // Defensive checks for non-browser environments (Node tests, SSR)
+    const hasNavigator = typeof navigator !== 'undefined'
+    const hasWindow = typeof window !== 'undefined'
+
+    // Detect if mobile device (safe guards)
+    const userAgent =
+      hasNavigator && (navigator as any).userAgent
+        ? (navigator as any).userAgent
+        : ''
     const isMobile =
       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent,
-      ) || window.innerWidth <= 768
+        userAgent,
+      ) || (hasWindow ? window.innerWidth <= 768 : false)
 
     // Get CPU cores (with fallback)
-    const cpuCores = navigator.hardwareConcurrency || (isMobile ? 4 : 8)
+    const cpuCores =
+      (hasNavigator && (navigator as any).hardwareConcurrency) ||
+      (isMobile ? 4 : 8)
 
     // Estimate memory (with fallback)
-    const memory = (navigator as any).deviceMemory
+    const memory = hasNavigator ? (navigator as any).deviceMemory : undefined
     const memoryGB = memory || (isMobile ? 2 : 8)
 
     // Estimate performance level

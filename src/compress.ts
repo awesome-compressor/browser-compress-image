@@ -105,11 +105,11 @@ interface CompressionAttempt {
 }
 
 const toolsCollections: Record<string, CompressorTool[]> = {
-  png: ['jsquash', 'browser-image-compression', 'canvas', 'compressorjs'],
+  png: ['jsquash', 'browser-image-compression', 'canvas'],
   gif: ['gifsicle'],
-  webp: ['jsquash', 'canvas', 'browser-image-compression', 'compressorjs'],
+  webp: ['jsquash', 'canvas', 'browser-image-compression'],
   jpeg: ['jsquash', 'compressorjs', 'canvas', 'browser-image-compression'],
-  others: ['jsquash', 'browser-image-compression', 'compressorjs', 'canvas'],
+  others: ['jsquash', 'browser-image-compression', 'canvas'],
 }
 
 // 重载：支持新的选项对象参数 - 返回多结果

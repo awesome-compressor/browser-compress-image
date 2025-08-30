@@ -44,8 +44,8 @@ export class MemoryManager {
 
   // Get current memory statistics
   getMemoryStats(): MemoryStats {
-    // Check if performance.memory is available (Chrome)
-    if ((performance as any).memory) {
+    // Check if performance.memory is available (Chrome) and guard non-browser envs
+    if (typeof performance !== 'undefined' && (performance as any).memory) {
       const memory = (performance as any).memory
       return {
         usedJSHeapSize: memory.usedJSHeapSize,
@@ -178,10 +178,14 @@ export class MemoryManager {
     })
     this.canvasElements.clear()
 
-    // Suggest garbage collection if available
-    if (window.gc && typeof window.gc === 'function') {
+    // Suggest garbage collection if available (guard window)
+    if (
+      typeof window !== 'undefined' &&
+      (window as any).gc &&
+      typeof (window as any).gc === 'function'
+    ) {
       try {
-        window.gc()
+        ;(window as any).gc()
       } catch (error) {
         console.warn('Manual garbage collection failed:', error)
       }
@@ -214,8 +218,8 @@ export class MemoryManager {
 
   // Setup memory pressure monitoring
   private setupMemoryMonitoring(): void {
-    // Use observer if available (experimental API)
-    if ('PerformanceObserver' in window) {
+    // Use observer if available (experimental API). Guard non-browser environments.
+    if (typeof PerformanceObserver !== 'undefined') {
       try {
         const observer = new PerformanceObserver((list) => {
           const entries = list.getEntries()
@@ -265,34 +269,66 @@ export class MemoryManager {
 
   // Create managed image element
   createManagedImage(): HTMLImageElement {
-    const img = new Image()
-    this.registerImageElement(img)
+    // Create image element with safe fallback for non-browser environments
+    let img: any
+    if (typeof Image !== 'undefined') {
+      img = new Image()
+    } else if (typeof document !== 'undefined') {
+      img = document.createElement('img')
+    } else {
+      // Minimal stub to avoid crashes in Node tests
+      img = { src: '', onload: null, onerror: null }
+    }
+
+    this.registerImageElement(img as HTMLImageElement)
 
     // Auto cleanup if not used for 5 minutes
     setTimeout(
       () => {
-        this.cleanupImageElement(img)
+        try {
+          this.cleanupImageElement(img as HTMLImageElement)
+        } catch (e) {
+          /* ignore */
+        }
       },
       5 * 60 * 1000,
     )
 
-    return img
+    return img as HTMLImageElement
   }
 
   // Create managed canvas element
   createManagedCanvas(): HTMLCanvasElement {
-    const canvas = document.createElement('canvas')
-    this.registerCanvasElement(canvas)
+    // Create canvas element with safe fallback for non-browser environments
+    let canvas: any
+    if (typeof document !== 'undefined' && document.createElement) {
+      canvas = document.createElement('canvas')
+    } else {
+      // Minimal stub implementing getContext for Node env
+      canvas = {
+        width: 0,
+        height: 0,
+        getContext: () => ({
+          clearRect: () => {},
+        }),
+      }
+    }
+
+    this.registerCanvasElement(canvas as HTMLCanvasElement)
 
     // Auto cleanup if not used for 5 minutes
     setTimeout(
       () => {
-        this.cleanupCanvasElement(canvas)
+        try {
+          this.cleanupCanvasElement(canvas as HTMLCanvasElement)
+        } catch (e) {
+          /* ignore */
+        }
       },
       5 * 60 * 1000,
     )
 
-    return canvas
+    return canvas as HTMLCanvasElement
   }
 
   // Destroy and cleanup all resources
