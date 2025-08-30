@@ -7,6 +7,7 @@ import type {
   ToolConfig,
 } from './types'
 import convertBlobToType from './convertBlobToType'
+import { runWithAbortAndTimeout } from './utils/abort'
 
 // 开发环境日志工具
 const devLog = {
@@ -26,6 +27,8 @@ const devLog = {
     }
   },
 }
+
+// runWithAbortAndTimeout moved to `src/utils/abort.ts`
 
 // 压缩工具类型定义
 export type CompressorTool =
@@ -179,6 +182,8 @@ export async function compressWithTools<T extends CompressResultType = 'blob'>(
     type: resultType = 'blob' as T,
     toolConfigs = [],
     toolRegistry = globalToolRegistry,
+    signal,
+    timeoutMs,
   } = options
 
   // 使用多工具压缩比对策略
@@ -191,6 +196,8 @@ export async function compressWithTools<T extends CompressResultType = 'blob'>(
     maxHeight,
     preserveExif,
     toolConfigs,
+    signal,
+    timeoutMs,
   }
 
   // 根据文件类型选择合适的压缩工具组合
@@ -253,6 +260,8 @@ async function compressWithMultipleTools(
     maxHeight?: number
     preserveExif?: boolean
     toolConfigs?: ToolConfig[]
+    signal?: AbortSignal
+    timeoutMs?: number
   },
   tools: CompressorTool[],
   toolRegistry: ToolRegistry,
@@ -271,8 +280,23 @@ async function compressWithMultipleTools(
   }
 
   const attempts: CompressionAttempt[] = []
-
   // 并行运行所有压缩工具
+  // 使用共享 AbortController，使任意失败/超时/外部取消能够中止所有正在运行的工具
+  const sharedController = new AbortController()
+  const sharedSignal = sharedController.signal
+
+  // 如果外部传入 signal，则在外部 abort 时转发到 shared controller
+  if ((options as any).signal) {
+    const outer = (options as any).signal as AbortSignal
+    if (outer.aborted) {
+      sharedController.abort()
+    } else {
+      outer.addEventListener('abort', () => sharedController.abort(), {
+        once: true,
+      })
+    }
+  }
+
   const promises = tools.map(async (tool) => {
     const startTime = performance.now()
 
@@ -297,7 +321,15 @@ async function compressWithMultipleTools(
         ...toolConfig, // 合并工具特定配置
       }
 
-      const compressedBlob = await compressorFunction(file, toolOptions)
+      // 支持可取消/超时：如果外层传入了 signal 或 timeoutMs，则把它传给实现或通过 race 包装
+      const runCompressor = () => compressorFunction(file, toolOptions)
+
+      const compressedBlob = await runWithAbortAndTimeout(
+        runCompressor,
+        // 使用 sharedSignal，让单个工具响应共享取消
+        sharedSignal,
+        options.timeoutMs,
+      )
 
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
@@ -310,6 +342,12 @@ async function compressWithMultipleTools(
         duration,
       } as CompressionAttempt
     } catch (error) {
+      // 如果某个工具失败（包括超时/取消），中止所有其他工具
+      try {
+        sharedController.abort()
+      } catch (e) {
+        /* ignore */
+      }
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
 
@@ -397,6 +435,8 @@ async function compressWithMultipleToolsAndReturnAll<
     maxHeight?: number
     preserveExif?: boolean
     toolConfigs?: ToolConfig[]
+    signal?: AbortSignal
+    timeoutMs?: number
   },
   tools: CompressorTool[],
   resultType: T,
@@ -417,7 +457,21 @@ async function compressWithMultipleToolsAndReturnAll<
 
   const attempts: CompressionAttempt[] = []
 
-  // 并行运行所有压缩工具
+  // 并行运行所有压缩工具，使用共享 AbortController
+  const sharedController = new AbortController()
+  const sharedSignal = sharedController.signal
+
+  if ((options as any).signal) {
+    const outer = (options as any).signal as AbortSignal
+    if (outer.aborted) {
+      sharedController.abort()
+    } else {
+      outer.addEventListener('abort', () => sharedController.abort(), {
+        once: true,
+      })
+    }
+  }
+
   const promises = tools.map(async (tool) => {
     const startTime = performance.now()
 
@@ -439,10 +493,16 @@ async function compressWithMultipleToolsAndReturnAll<
         maxWidth: options.maxWidth,
         maxHeight: options.maxHeight,
         preserveExif: options.preserveExif,
-        ...toolConfig, // 合并工具特定配置
+        ...(toolConfig || {}), // 合并工具特定配置
+        // 将 sharedSignal 传入工具实现，若其支持则可响应取消
+        signal: sharedSignal,
       }
 
-      const compressedBlob = await compressorFunction(file, toolOptions)
+      const compressedBlob = await runWithAbortAndTimeout(
+        () => compressorFunction(file, toolOptions),
+        sharedSignal,
+        options.timeoutMs,
+      )
 
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
@@ -455,6 +515,13 @@ async function compressWithMultipleToolsAndReturnAll<
         duration,
       } as CompressionAttempt
     } catch (error) {
+      // 某个工具失败（含超时/取消），中止其他工具
+      try {
+        sharedController.abort()
+      } catch (e) {
+        /* ignore */
+      }
+
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
 

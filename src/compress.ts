@@ -8,6 +8,8 @@ import type {
 } from './types'
 import type { CompressorTool } from './compressWithTools'
 import convertBlobToType from './convertBlobToType'
+import { LRUCache } from './utils/lruCache'
+import { runWithAbortAndTimeout } from './utils/abort'
 // 注意：这里不再直接导入所有工具，而是动态导入
 
 // 动态导入压缩工具的辅助函数
@@ -70,6 +72,11 @@ const devLog = {
     }
   },
 }
+
+// 使用仓库内的 LRUCache 实现
+const compressResultCache = new LRUCache<string, Blob>(100)
+
+// runWithAbortAndTimeout moved to `src/utils/abort.ts`
 
 // 支持 EXIF 保留的工具
 const EXIF_SUPPORTED_TOOLS: CompressorTool[] = [
@@ -157,6 +164,8 @@ export async function compress<T extends CompressResultType = 'blob'>(
     returnAllResults = false,
     type: resultType = 'blob' as T,
     toolConfigs = [],
+    signal,
+    timeoutMs,
   } = options
 
   // 使用多工具压缩比对策略
@@ -169,6 +178,22 @@ export async function compress<T extends CompressResultType = 'blob'>(
     maxHeight,
     preserveExif,
     toolConfigs,
+    signal,
+    timeoutMs,
+  }
+
+  // 构建缓存 key（仅用于单结果路径）
+  const cacheKey = `${file.name}:${file.size}:type=${file.type}:q=${quality}:m=${mode}:tw=${targetWidth || ''}:th=${targetHeight || ''}:mw=${maxWidth || ''}:mh=${maxHeight || ''}:preserveExif=${preserveExif}:cfg=${JSON.stringify(
+    toolConfigs,
+  )}`
+
+  // 如果需要返回所有结果，则不使用缓存（避免结构不一致）
+  if (!returnAllResults) {
+    const cached = compressResultCache.get(cacheKey)
+    if (cached) {
+      devLog.log('Cache hit for', cacheKey)
+      return convertBlobToType(cached, resultType, file.name)
+    }
   }
 
   // 根据文件类型选择合适的压缩工具组合
@@ -210,6 +235,13 @@ export async function compress<T extends CompressResultType = 'blob'>(
     tools,
   )
 
+  // 将结果存入缓存（仅缓存单结果路径）
+  try {
+    compressResultCache.set(cacheKey, bestResult)
+  } catch (e) {
+    devLog.warn('Failed to cache compress result', e)
+  }
+
   return convertBlobToType(bestResult, resultType, file.name)
 }
 
@@ -225,6 +257,8 @@ async function compressWithMultipleTools(
     maxHeight?: number
     preserveExif?: boolean
     toolConfigs?: ToolConfig[]
+    signal?: AbortSignal
+    timeoutMs?: number
   },
   tools: CompressorTool[],
 ): Promise<Blob> {
@@ -243,6 +277,20 @@ async function compressWithMultipleTools(
 
   const attempts: CompressionAttempt[] = []
   // 并行运行所有压缩工具
+  const sharedController = new AbortController()
+  const sharedSignal = sharedController.signal
+
+  if ((options as any).signal) {
+    const outer = (options as any).signal as AbortSignal
+    if (outer.aborted) {
+      sharedController.abort()
+    } else {
+      outer.addEventListener('abort', () => sharedController.abort(), {
+        once: true,
+      })
+    }
+  }
+
   const promises = tools.map(async (tool) => {
     const startTime = performance.now()
 
@@ -266,7 +314,14 @@ async function compressWithMultipleTools(
 
       // 使用动态导入获取压缩工具
       const compressorFunction = await getCompressorTool(tool)
-      compressedBlob = await compressorFunction(file, toolOptions)
+
+      // 支持可取消/超时包装，传入 sharedSignal 以便统一取消
+      ;(toolOptions as any).signal = sharedSignal
+      compressedBlob = await runWithAbortAndTimeout(
+        () => compressorFunction(file, toolOptions),
+        sharedSignal,
+        options.timeoutMs,
+      )
 
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
@@ -279,6 +334,12 @@ async function compressWithMultipleTools(
         duration,
       } as CompressionAttempt
     } catch (error) {
+      // 工具失败（含超时/取消），中止其他工具
+      try {
+        sharedController.abort()
+      } catch (e) {
+        /* ignore */
+      }
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
 
@@ -366,6 +427,8 @@ async function compressWithMultipleToolsAndReturnAll<
     maxHeight?: number
     preserveExif?: boolean
     toolConfigs?: ToolConfig[]
+    signal?: AbortSignal
+    timeoutMs?: number
   },
   tools: CompressorTool[],
   resultType: T,
@@ -409,7 +472,11 @@ async function compressWithMultipleToolsAndReturnAll<
 
       // 使用动态导入获取压缩工具
       const compressorFunction = await getCompressorTool(tool)
-      compressedBlob = await compressorFunction(file, toolOptions)
+      compressedBlob = await runWithAbortAndTimeout(
+        () => compressorFunction(file, toolOptions),
+        options.signal,
+        options.timeoutMs,
+      )
 
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
@@ -609,6 +676,8 @@ async function compressWithMultipleToolsWithStats(
     maxHeight?: number
     preserveExif?: boolean
     toolConfigs?: ToolConfig[]
+    signal?: AbortSignal
+    timeoutMs?: number
   },
 ): Promise<CompressionStats> {
   const totalStartTime = performance.now()
@@ -670,7 +739,11 @@ async function compressWithMultipleToolsWithStats(
 
       // 使用动态导入获取压缩工具
       const compressorFunction = await getCompressorTool(tool)
-      compressedBlob = await compressorFunction(file, toolOptions)
+      compressedBlob = await runWithAbortAndTimeout(
+        () => compressorFunction(file, toolOptions),
+        options.signal,
+        options.timeoutMs,
+      )
 
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)

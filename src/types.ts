@@ -93,6 +93,15 @@ export interface CompressOptions {
    * ]
    */
   toolConfigs?: ToolConfig[]
+  /**
+   * 可选的 AbortSignal，用于取消压缩操作
+   */
+  signal?: AbortSignal
+
+  /**
+   * 可选的超时时间（毫秒），到达后压缩调用会被视为超时失败
+   */
+  timeoutMs?: number
 }
 
 // 预处理：裁剪/旋转/翻转/缩放 相关类型

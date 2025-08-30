@@ -6,6 +6,8 @@ export interface CompressionTask {
   resolve: (result: Blob) => void
   reject: (error: Error) => void
   priority?: number // Higher number = higher priority
+  // Optional cancel listener used to cleanup when task is started or removed
+  cancelListener?: () => void
 }
 
 export interface QueueStats {
@@ -193,6 +195,16 @@ export class CompressionQueue {
     try {
       console.log(`Starting compression task: ${task.id}`)
 
+      // Remove any cancel listener since task is now running
+      if (task.cancelListener) {
+        try {
+          task.cancelListener()
+        } catch (e) {
+          /* ignore */
+        }
+        task.cancelListener = undefined
+      }
+
       // Import compress function dynamically to avoid circular dependency
       const { compress } = await import('../compress')
 
@@ -238,6 +250,45 @@ export class CompressionQueue {
         resolve,
         reject,
         priority,
+      }
+
+      // If caller provided an AbortSignal in options, wire it to cancel this queued task
+      if (options && options.signal) {
+        const sig = options.signal as AbortSignal
+        const onAbort = () => {
+          console.log(
+            'compressionQueue: abort signal received for task',
+            taskId,
+          )
+          // If task still in queue, remove and reject
+          const removed = this.removeTask(taskId)
+          if (removed) {
+            console.log(
+              'compressionQueue: task removed from queue due to abort',
+              taskId,
+            )
+            try {
+              reject(new Error('Task cancelled'))
+            } catch (e) {
+              /* ignore */
+            }
+          } else {
+            console.log(
+              'compressionQueue: abort received but task already started or not in queue',
+              taskId,
+            )
+          }
+        }
+
+        // Attach listener and keep a cleanup function on the task
+        sig.addEventListener('abort', onAbort, { once: true })
+        task.cancelListener = () => {
+          try {
+            sig.removeEventListener('abort', onAbort)
+          } catch (e) {
+            /* ignore */
+          }
+        }
       }
 
       this.addTask(task)

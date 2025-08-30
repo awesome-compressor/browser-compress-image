@@ -83,6 +83,7 @@ interface ImageItem {
   compressedSize?: number
   compressionRatio?: number
   isCompressing: boolean
+  isUploading?: boolean
   compressionError?: string
   quality: number // 每张图片独立的质量设置
   isQualityCustomized: boolean // 标记图片质量是否被用户单独修改过
@@ -307,6 +308,130 @@ const compressionStats = ref<CompressionStatsInfo>({
   isWorkerSupported: false,
   currentConcurrency: 0,
 })
+
+// Per-image AbortController storage for cancel support in UI
+const abortControllers = new Map<string, AbortController>()
+
+function createControllerForItem(itemId: string) {
+  const controller = new AbortController()
+  abortControllers.set(itemId, controller)
+  return controller
+}
+
+function cleanupController(itemId: string) {
+  const c = abortControllers.get(itemId)
+  if (c) {
+    try {
+      // remove any references
+      c.abort()
+    } catch (e) {
+      // ignore
+    }
+    abortControllers.delete(itemId)
+  }
+}
+
+function cancelCompression(item: ImageItem) {
+  const c = abortControllers.get(item.id)
+  if (!c) return
+  // Always abort underlying controller
+  try {
+    c.abort()
+  } catch (e) {
+    /* ignore */
+  }
+  abortControllers.delete(item.id)
+
+  console.log('cancelCompression called for', item.id, item.file.name, {
+    isUploading: item.isUploading,
+    isCompressing: item.isCompressing,
+  })
+
+  if (item.isUploading) {
+    // If still uploading, remove item and revoke urls
+    const idx = imageItems.value.findIndex((it) => it.id === item.id)
+    if (idx !== -1) {
+      const removed = imageItems.value.splice(idx, 1)[0]
+      try {
+        if (removed.originalUrl) URL.revokeObjectURL(removed.originalUrl)
+        if (removed.compressedUrl) URL.revokeObjectURL(removed.compressedUrl)
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    if (compressionProgress.value.total > 0) {
+      compressionProgress.value.total = Math.max(
+        0,
+        compressionProgress.value.total - 1,
+      )
+    }
+    ElMessage({ message: `Upload canceled: ${item.file.name}`, type: 'info' })
+    return
+  }
+
+  // If compressing, mark as canceled
+  if (item.isCompressing) {
+    updateImageItem(item, {
+      isCompressing: false,
+      compressionError: 'Canceled by user',
+      isUploading: false,
+    })
+    ElMessage({
+      message: `Canceled compression: ${item.file.name}`,
+      type: 'info',
+    })
+    return
+  }
+
+  // Fallback
+  updateImageItem(item, {
+    compressionError: 'Canceled by user',
+    isUploading: false,
+    isCompressing: false,
+  })
+  ElMessage({ message: `Canceled: ${item.file.name}`, type: 'info' })
+}
+
+// Cancel all items that are currently in uploading state
+function cancelAllUploads() {
+  const uploading = imageItems.value.filter((it) => it.isUploading)
+  if (uploading.length === 0) {
+    console.log('cancelAllUploads: no uploading items')
+    return
+  }
+
+  console.log('cancelAllUploads: canceling', uploading.length, 'items')
+  for (const item of [...uploading]) {
+    const c = abortControllers.get(item.id)
+    if (c) {
+      try {
+        c.abort()
+      } catch (e) {
+        /* ignore */
+      }
+      abortControllers.delete(item.id)
+    }
+
+    const idx = imageItems.value.findIndex((it) => it.id === item.id)
+    if (idx !== -1) {
+      const removed = imageItems.value.splice(idx, 1)[0]
+      try {
+        if (removed.originalUrl) URL.revokeObjectURL(removed.originalUrl)
+        if (removed.compressedUrl) URL.revokeObjectURL(removed.compressedUrl)
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }
+
+  // adjust total
+  compressionProgress.value.total = Math.max(
+    0,
+    compressionProgress.value.total - uploading.length,
+  )
+
+  ElMessage({ message: `Canceled ${uploading.length} upload(s)`, type: 'info' })
+}
 
 // 工具配置接口
 interface ToolConfig {
@@ -1247,13 +1372,20 @@ async function addNewImages(files: File[]) {
     file,
     originalUrl: URL.createObjectURL(file),
     originalSize: file.size,
-    isCompressing: true, // 立即设置为压缩中
+    isCompressing: false,
+    isUploading: true,
     quality: globalQuality.value,
     isQualityCustomized: false,
     qualityDragging: globalQuality.value,
   }))
 
-  // 先添加到列表中显示加载状态
+  // 先添加到列表中显示加载/上传状态
+  // create upload controllers for each new item so user can cancel during "upload"
+  newItems.forEach((it) => {
+    it.isUploading = true
+    it.isCompressing = false
+    createControllerForItem(it.id)
+  })
   imageItems.value.push(...newItems)
 
   try {
@@ -1283,6 +1415,13 @@ async function addNewImages(files: File[]) {
       const item = newItems[i]
 
       try {
+        // transition from upload -> compress: if item was uploading and not canceled
+        // remove upload controller and create a fresh controller for compression
+        cleanupController(item.id)
+        // mark as compressing now
+        updateImageItem(item, { isUploading: false, isCompressing: true })
+        const controller = createControllerForItem(item.id)
+
         // 使用增强的单个压缩 - 自动队列管理和Worker支持
         const result = await compressEnhanced(file, {
           quality: globalQuality.value,
@@ -1291,6 +1430,7 @@ async function addNewImages(files: File[]) {
           useWorker: true,
           useQueue: true,
           timeout: deviceTimeout, // 使用设备适配的超时时间
+          signal: controller.signal,
           type: 'blob',
         })
 
@@ -1309,9 +1449,18 @@ async function addNewImages(files: File[]) {
         compressionProgress.value.current = i + 1
 
         console.log(`✅ Compressed ${i + 1}/${files.length}: ${file.name}`)
+        // cleanup controller after success
+        // cleanup controller after success
+        cleanupController(item.id)
       } catch (error) {
         console.error(`❌ Failed to compress ${file.name}:`, error)
         item.isCompressing = false
+        // ensure controller cleaned on failure
+        cleanupController(item.id)
+        item.isCompressing = false
+        item.isUploading = false
+        // ensure controller cleaned on failure
+        cleanupController(item.id)
         item.compressionError =
           error instanceof Error ? error.message : 'Compression failed'
 
@@ -1348,6 +1497,7 @@ async function addNewImages(files: File[]) {
     })
   } finally {
     // 重置进度状态
+    // 重置进度状态
     compressionProgress.value.isActive = false
   }
 }
@@ -1360,6 +1510,8 @@ async function compressImage(item: ImageItem): Promise<void> {
   item.compressionError = undefined
 
   try {
+    // create abort controller for this item
+    const controller = createControllerForItem(item.id)
     // 过滤出启用的工具配置
     const enabledToolConfigs = toolConfigs.value.filter(
       (config) => config.enabled && config.key.trim(),
@@ -1374,6 +1526,7 @@ async function compressImage(item: ImageItem): Promise<void> {
       useWorker: true, // 启用Worker支持（如果可用）
       useQueue: true, // 启用队列管理
       timeout: getDeviceBasedTimeout(30000), // 设备适配的超时时间
+      signal: controller.signal,
       type: 'blob', // 确保返回Blob类型
     })
 
@@ -1410,6 +1563,8 @@ async function compressImage(item: ImageItem): Promise<void> {
     })
   } finally {
     item.isCompressing = false
+    // cleanup controller if still present
+    cleanupController(item.id)
   }
 }
 
@@ -1749,8 +1904,30 @@ function toggleFullscreen() {
 function handleKeydown(e: KeyboardEvent) {
   if (!hasImages.value) return
 
+  // Shift+Escape: cancel all uploads
+  if (e.key === 'Escape' && e.shiftKey) {
+    e.preventDefault()
+    cancelAllUploads()
+    return
+  }
+
   switch (e.key) {
     case 'Escape':
+      // If there are uploading items, prefer cancelling upload instead of toggling fullscreen
+      const uploadingItems = imageItems.value.filter((it) => it.isUploading)
+      if (uploadingItems.length > 0) {
+        // If current image is uploading, cancel it; otherwise cancel the first uploading
+        const cur = currentImage.value
+        if (cur && cur.isUploading) {
+          cancelCompression(cur)
+        } else {
+          cancelCompression(uploadingItems[0])
+        }
+        // prevent other escape handlers
+        e.preventDefault()
+        return
+      }
+
       if (isFullscreen.value) {
         toggleFullscreen()
       }
@@ -2217,10 +2394,22 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               >
                 ✂️
               </div>
-              <div v-if="item.isCompressing" class="compressing-overlay">
+              <div
+                v-if="item.isCompressing || item.isUploading"
+                class="compressing-overlay"
+              >
                 <el-icon class="is-loading">
                   <Loading />
                 </el-icon>
+                <button
+                  class="cancel-btn"
+                  @click.stop="cancelCompression(item)"
+                >
+                  Cancel
+                </button>
+                <div class="overlay-label" v-if="item.isUploading">
+                  Uploading...
+                </div>
               </div>
               <div v-if="item.compressionError" class="error-overlay">
                 <span class="error-text">Error</span>
