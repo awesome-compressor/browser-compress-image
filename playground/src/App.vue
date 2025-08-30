@@ -3525,12 +3525,6 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   min-width: 100px;
 }
 
-.quality-control {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .quality-label {
   font-size: 11px;
   color: #6b7280;
@@ -3672,7 +3666,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 .quality-control {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   margin-left: 20px;
 }
 
