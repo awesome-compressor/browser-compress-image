@@ -2,6 +2,8 @@
  * LRU (Least Recently Used) 缓存实现
  * 当缓存达到最大容量时，自动淘汰最久未使用的项目
  */
+import logger from './logger'
+
 export class LRUCache<K, V> {
   private cache: Map<K, V>
   private maxSize: number
@@ -36,7 +38,7 @@ export class LRUCache<K, V> {
       const firstKey = this.cache.keys().next().value
       if (firstKey !== undefined) {
         this.cache.delete(firstKey)
-        console.log(
+        logger.log(
           `LRU Cache: Removed least recently used entry for key: ${String(firstKey)}`,
         )
       }
@@ -84,7 +86,7 @@ export class LRUCache<K, V> {
       const firstKey = this.cache.keys().next().value
       if (firstKey !== undefined) {
         this.cache.delete(firstKey)
-        console.log(
+        logger.log(
           `LRU Cache: Removed entry due to size reduction: ${String(firstKey)}`,
         )
       }

@@ -698,21 +698,72 @@ compressWithStats(
 interface CompressionStats {
   bestTool: string // 最优压缩工具名称
   compressedFile: Blob // 最优压缩结果
-  originalSize: number // 原始文件大小（字节）
-  compressedSize: number // 压缩后大小（字节）
-  compressionRatio: number // 压缩比例（百分比）
-  totalDuration: number // 总耗时（毫秒）
-  toolsUsed: Array<{
-    // 各工具详细信息
-    tool: string // 工具名称
-    size: number // 压缩后大小
-    duration: number // 耗时
-    compressionRatio: number // 压缩比例
-    success: boolean // 是否成功
-    error?: string // 错误信息（如果失败）
-  }>
-}
 ```
+
+---
+
+## 📝 日志与调试
+
+库内部使用一个小型可配置的 logger，默认是静默的（production friendly）。你可以按三种方式来打开或定制日志：
+
+- 通过环境变量在打包或测试时开启：
+  - 设置 `DEBUG_BROWSER_COMPRESS_IMAGE=true` 或在开发环境下 `NODE_ENV=development`，默认会启用日志。
+
+- 在运行时启用默认 logger：
+
+```typescript
+import { logger } from '@awesome-compressor/browser-compress-image'
+
+// 打开日志
+logger.enable()
+
+// 关闭日志
+logger.disable()
+```
+
+- 注入自定义 logger（例如转发到你的应用日志系统或远程收集）：
+
+```typescript
+import {
+  setLogger,
+  resetLogger,
+  logger,
+} from '@awesome-compressor/browser-compress-image'
+
+// 自定义 logger 实现（只需实现需要的方法）
+const custom = {
+  enabled: true,
+  log: (...args: any[]) => myAppLogger.info(...args),
+  warn: (...args: any[]) => myAppLogger.warn(...args),
+  error: (...args: any[]) => myAppLogger.error(...args),
+}
+
+setLogger(custom)
+
+// 使用库时，日志会交由 custom 处理
+logger.log('this will go to myAppLogger')
+
+// 恢复默认实现
+resetLogger()
+```
+
+这使你可以在开发或调试时打开详细日志，同时在生产发布时保持控制台清洁。
+originalSize: number // 原始文件大小（字节）
+compressedSize: number // 压缩后大小（字节）
+compressionRatio: number // 压缩比例（百分比）
+totalDuration: number // 总耗时（毫秒）
+toolsUsed: Array<{
+// 各工具详细信息
+tool: string // 工具名称
+size: number // 压缩后大小
+duration: number // 耗时
+compressionRatio: number // 压缩比例
+success: boolean // 是否成功
+error?: string // 错误信息（如果失败）
+}>
+}
+
+````
 
 #### 🛠️ 支持的压缩工具
 
@@ -766,7 +817,7 @@ try {
 } catch (error) {
   console.error('GIF files do not support EXIF preservation')
 }
-```
+````
 
 #### 🖼️ 支持的图片格式
 

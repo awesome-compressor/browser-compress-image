@@ -1,4 +1,5 @@
 import { LRUCache } from '../utils/lruCache'
+import logger from '../utils/logger'
 
 // 缓存对象，用于存储文件的压缩结果（最多缓存50个文件）
 const compressionCache = new LRUCache<string, Blob>(50)
@@ -39,7 +40,7 @@ export function compressWithTinyPng(
 
       // 检查缓存
       if (compressionCache.has(cacheKey)) {
-        console.log('TinyPNG: Using cached result for file:', file.name)
+        logger.log('TinyPNG: Using cached result for file:', file.name)
         resolve(compressionCache.get(cacheKey)!)
         return
       }
@@ -162,7 +163,7 @@ export function compressWithTinyPng(
 
       // 检查压缩效果
       if (compressedBlob.size >= file.size * 0.98) {
-        console.warn(
+        logger.warn(
           'TinyPNG compression did not significantly reduce file size, returning original file',
         )
         // 缓存原始文件
@@ -176,7 +177,7 @@ export function compressWithTinyPng(
         resolve(finalBlob)
       }
     } catch (error) {
-      console.error('TinyPNG compression error:', error)
+      logger.error('TinyPNG compression error:', error)
       reject(error)
     }
   })
@@ -185,9 +186,8 @@ export function compressWithTinyPng(
 // 导出缓存管理功能
 export function clearTinyPngCache() {
   compressionCache.clear()
-  console.log('TinyPNG cache cleared')
+  logger.log('TinyPNG cache cleared')
 }
-
 export function getTinyPngCacheSize() {
   return compressionCache.size
 }
@@ -214,5 +214,5 @@ export function getTinyPngCacheInfo() {
 // 配置缓存最大大小
 export function configureTinyPngCache(maxSize: number = 50) {
   compressionCache.setMaxSize(maxSize)
-  console.log(`TinyPNG cache reconfigured with max size: ${maxSize}`)
+  logger.log(`TinyPNG cache reconfigured with max size: ${maxSize}`)
 }

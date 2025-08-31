@@ -13,6 +13,8 @@ export interface MemoryThresholds {
   maxTotalSize: number // Maximum total files size in queue
 }
 
+import logger from './logger'
+
 export class MemoryManager {
   private static instance: MemoryManager
   private objectUrls: Set<string> = new Set()
@@ -103,7 +105,7 @@ export class MemoryManager {
         URL.revokeObjectURL(url)
         this.objectUrls.delete(url)
       } catch (error) {
-        console.warn('Failed to revoke object URL:', error)
+        logger.warn('Failed to revoke object URL:', error)
       }
     }
   }
@@ -117,7 +119,7 @@ export class MemoryManager {
         img.onerror = null
         this.imageElements.delete(img)
       } catch (error) {
-        console.warn('Failed to cleanup image element:', error)
+        logger.warn('Failed to cleanup image element:', error)
       }
     }
   }
@@ -134,21 +136,21 @@ export class MemoryManager {
         canvas.height = 0
         this.canvasElements.delete(canvas)
       } catch (error) {
-        console.warn('Failed to cleanup canvas element:', error)
+        logger.warn('Failed to cleanup canvas element:', error)
       }
     }
   }
 
   // Perform comprehensive cleanup
   performCleanup(): void {
-    console.log('Performing memory cleanup...')
+    logger.log('Performing memory cleanup...')
 
     // Cleanup all tracked resources
     this.objectUrls.forEach((url) => {
       try {
         URL.revokeObjectURL(url)
       } catch (error) {
-        console.warn('Failed to revoke URL during cleanup:', error)
+        logger.warn('Failed to revoke URL during cleanup:', error)
       }
     })
     this.objectUrls.clear()
@@ -159,7 +161,7 @@ export class MemoryManager {
         img.onload = null
         img.onerror = null
       } catch (error) {
-        console.warn('Failed to cleanup image during cleanup:', error)
+        logger.warn('Failed to cleanup image during cleanup:', error)
       }
     })
     this.imageElements.clear()
@@ -173,7 +175,7 @@ export class MemoryManager {
         canvas.width = 0
         canvas.height = 0
       } catch (error) {
-        console.warn('Failed to cleanup canvas during cleanup:', error)
+        logger.warn('Failed to cleanup canvas during cleanup:', error)
       }
     })
     this.canvasElements.clear()
@@ -187,11 +189,11 @@ export class MemoryManager {
       try {
         ;(window as any).gc()
       } catch (error) {
-        console.warn('Manual garbage collection failed:', error)
+        logger.warn('Manual garbage collection failed:', error)
       }
     }
 
-    console.log('Memory cleanup completed')
+    logger.log('Memory cleanup completed')
   }
 
   // Setup periodic cleanup every 30 seconds
@@ -205,12 +207,12 @@ export class MemoryManager {
         process.env &&
         process.env.NODE_ENV === 'development'
       ) {
-        console.log('Memory Stats:', stats)
+        logger.log('Memory Stats:', stats)
       }
 
       // Perform cleanup if memory is critical
       if (stats.memoryUsagePercentage > this.thresholds.critical) {
-        console.warn('Memory usage critical, performing cleanup')
+        logger.warn('Memory usage critical, performing cleanup')
         this.performCleanup()
       }
     }, 30000) // Every 30 seconds
@@ -228,14 +230,14 @@ export class MemoryManager {
               entry.entryType === 'measure' &&
               entry.name.includes('memory')
             ) {
-              console.log('Memory measurement:', entry)
+              logger.log('Memory measurement:', entry)
             }
           })
         })
 
         observer.observe({ entryTypes: ['measure'] })
       } catch (error) {
-        console.warn('Memory monitoring setup failed:', error)
+        logger.warn('Memory monitoring setup failed:', error)
       }
     }
   }
@@ -243,7 +245,7 @@ export class MemoryManager {
   // Update memory thresholds
   updateThresholds(newThresholds: Partial<MemoryThresholds>): void {
     this.thresholds = { ...this.thresholds, ...newThresholds }
-    console.log('Memory thresholds updated:', this.thresholds)
+    logger.log('Memory thresholds updated:', this.thresholds)
   }
 
   // Get current thresholds
@@ -347,7 +349,7 @@ export function checkMemoryBeforeOperation(fileSize: number = 0): boolean {
 
   // Check if memory is already critical
   if (manager.isMemoryCritical()) {
-    console.warn(
+    logger.warn(
       'Memory usage is critical, consider reducing concurrent operations',
     )
     return false
@@ -355,7 +357,7 @@ export function checkMemoryBeforeOperation(fileSize: number = 0): boolean {
 
   // Check file size limits
   if (fileSize > 0 && !manager.isFileSizeAcceptable(fileSize)) {
-    console.warn(`File size ${fileSize} bytes exceeds limit`)
+    logger.warn(`File size ${fileSize} bytes exceeds limit`)
     return false
   }
 

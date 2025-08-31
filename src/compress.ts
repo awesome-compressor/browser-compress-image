@@ -9,6 +9,7 @@ import type {
 import type { CompressorTool } from './compressWithTools'
 import convertBlobToType from './convertBlobToType'
 import { LRUCache } from './utils/lruCache'
+import logger from './utils/logger'
 import { runWithAbortAndTimeout } from './utils/abort'
 // 注意：这里不再直接导入所有工具，而是动态导入
 
@@ -55,23 +56,7 @@ async function getCompressorTool(tool: CompressorTool) {
 }
 
 // 开发环境日志工具
-const devLog = {
-  log: (...args: any[]) => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log(...args)
-    }
-  },
-  warn: (...args: any[]) => {
-    if (process.env.NODE_ENV === 'development') {
-      console.warn(...args)
-    }
-  },
-  table: (data: any) => {
-    if (process.env.NODE_ENV === 'development') {
-      console.table(data)
-    }
-  },
-}
+// legacy devLog replaced by centralized logger
 
 // 使用仓库内的 LRUCache 实现
 const compressResultCache = new LRUCache<string, Blob>(100)
@@ -191,7 +176,7 @@ export async function compress<T extends CompressResultType = 'blob'>(
   if (!returnAllResults) {
     const cached = compressResultCache.get(cacheKey)
     if (cached) {
-      devLog.log('Cache hit for', cacheKey)
+      logger.debug('Cache hit for', cacheKey)
       return convertBlobToType(cached, resultType, file.name)
     }
   }
@@ -239,7 +224,7 @@ export async function compress<T extends CompressResultType = 'blob'>(
   try {
     compressResultCache.set(cacheKey, bestResult)
   } catch (e) {
-    devLog.warn('Failed to cache compress result', e)
+    logger.warn('Failed to cache compress result', e)
   }
 
   return convertBlobToType(bestResult, resultType, file.name)
@@ -272,7 +257,7 @@ async function compressWithMultipleTools(
         'No EXIF-supporting tools available for this file type. Please disable preserveExif or use a different file format.',
       )
     }
-    devLog.log('preserveExif=true, filtered tools:', tools)
+    logger.log('preserveExif=true, filtered tools:', tools)
   }
 
   const attempts: CompressionAttempt[] = []
@@ -362,7 +347,7 @@ async function compressWithMultipleTools(
     if (result.status === 'fulfilled') {
       attempts.push(result.value)
     } else {
-      devLog.warn('Compression tool failed:', result.reason)
+      logger.warn('Compression tool failed:', result.reason)
     }
   })
 
@@ -370,7 +355,7 @@ async function compressWithMultipleTools(
   const successfulAttempts = attempts.filter((attempt) => attempt.success)
 
   if (successfulAttempts.length === 0) {
-    devLog.warn('All compression attempts failed, returning original file')
+    logger.warn('All compression attempts failed, returning original file')
     return file
   }
 
@@ -384,7 +369,7 @@ async function compressWithMultipleTools(
     const totalEndTime = performance.now()
     const totalDuration = Math.round(totalEndTime - totalStartTime)
 
-    devLog.log(
+    logger.log(
       `Best compression (${bestAttempt.tool}) size: ${bestAttempt.size}, original: ${file.size}, using original (total: ${totalDuration}ms)`,
     )
     return file
@@ -393,13 +378,13 @@ async function compressWithMultipleTools(
   const totalEndTime = performance.now()
   const totalDuration = Math.round(totalEndTime - totalStartTime)
 
-  devLog.log(
+  logger.log(
     `Best compression result: ${bestAttempt.tool} (${bestAttempt.size} bytes, ${(((file.size - bestAttempt.size) / file.size) * 100).toFixed(1)}% reduction, ${bestAttempt.duration}ms) - Total time: ${totalDuration}ms`,
   )
 
   // 输出所有工具的性能比较
   if (successfulAttempts.length > 1) {
-    devLog.table(
+    logger.table(
       successfulAttempts.map((attempt) => ({
         Tool: attempt.tool,
         'Size (bytes)': attempt.size,
@@ -443,7 +428,7 @@ async function compressWithMultipleToolsAndReturnAll<
         'No EXIF-supporting tools available for this file type. Please disable preserveExif or use a different file format.',
       )
     }
-    devLog.log('preserveExif=true, filtered tools:', tools)
+    logger.log('preserveExif=true, filtered tools:', tools)
   }
 
   const attempts: CompressionAttempt[] = []
@@ -511,7 +496,7 @@ async function compressWithMultipleToolsAndReturnAll<
     if (result.status === 'fulfilled') {
       attempts.push(result.value)
     } else {
-      devLog.warn('Compression tool failed:', result.reason)
+      logger.warn('Compression tool failed:', result.reason)
     }
   })
 
@@ -579,13 +564,13 @@ async function compressWithMultipleToolsAndReturnAll<
     file.name,
   )
 
-  devLog.log(
+  logger.log(
     `Best compression result: ${bestAttempt.tool} (${bestAttempt.size} bytes, ${(((file.size - bestAttempt.size) / file.size) * 100).toFixed(1)}% reduction) - Total time: ${totalDuration}ms`,
   )
 
   // 输出所有工具的性能比较
   if (successfulAttempts.length > 1) {
-    devLog.table(
+    logger.table(
       successfulAttempts.map((attempt) => ({
         Tool: attempt.tool,
         'Size (bytes)': attempt.size,
@@ -710,7 +695,7 @@ async function compressWithMultipleToolsWithStats(
         'No EXIF-supporting tools available for this file type. Please disable preserveExif or use a different file format.',
       )
     }
-    devLog.log('preserveExif=true, filtered tools:', tools)
+    logger.log('preserveExif=true, filtered tools:', tools)
   }
 
   const attempts: CompressionAttempt[] = []

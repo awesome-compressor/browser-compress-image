@@ -1,4 +1,5 @@
 import type { OutputType } from '../types'
+import logger from '../utils/logger'
 
 // Track WASM module initialization promises to avoid duplicate loading
 const wasmLoadPromises = new Map<OutputType, Promise<void>>()
@@ -66,7 +67,7 @@ async function importJsquashModule(format: OutputType): Promise<any> {
     const cdnUrl = `https://unpkg.com/@jsquash/${format}@latest?module`
     return await import(/* @vite-ignore */ cdnUrl)
   } catch (cdnError) {
-    console.error(`CDN import failed for ${format}:`, cdnError)
+    logger.error(`CDN import failed for ${format}:`, cdnError)
     throw cdnError
   }
 }
@@ -87,7 +88,7 @@ export async function ensureWasmLoaded(format: OutputType): Promise<void> {
           await loadLocalWasm(format)
           return
         } catch (localError) {
-          console.warn(
+          logger.warn(
             `Local WASM loading failed for ${format}, falling back to CDN:`,
             localError,
           )
@@ -102,7 +103,7 @@ export async function ensureWasmLoaded(format: OutputType): Promise<void> {
 
       // 检查是否是WASM加载错误
       if (error instanceof Error && error.message.includes('magic word')) {
-        console.error(
+        logger.error(
           `WASM loading failed for ${format}: Invalid WASM file or CDN issue`,
           error,
         )
@@ -111,7 +112,8 @@ export async function ensureWasmLoaded(format: OutputType): Promise<void> {
         )
       }
 
-      console.error(`Failed to initialize WASM for ${format}:`, error)
+      logger.error(`Failed to initialize WASM for ${format}:`, error)
+
       throw new Error(
         `Failed to initialize ${format} support: ${error instanceof Error ? error.message : String(error)}`,
       )
@@ -171,7 +173,7 @@ export async function downloadWasmFiles(
       // 尝试从unpkg CDN获取WASM文件
       const cdnUrl = `https://unpkg.com/${packageName}/codec/${wasmFileName}`
 
-      console.log(`正在下载 ${format} WASM 文件: ${cdnUrl}`)
+      logger.log(`正在下载 ${format} WASM 文件: ${cdnUrl}`)
 
       const response = await fetch(cdnUrl)
       if (!response.ok) {
@@ -208,11 +210,11 @@ export async function downloadWasmFiles(
       URL.revokeObjectURL(url)
 
       results.push({ format, success: true })
-      console.log(`✅ ${format} WASM 文件下载成功`)
+      logger.log(`✅ ${format} WASM 文件下载成功`)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       results.push({ format, success: false, error: errorMsg })
-      console.error(`❌ ${format} WASM 文件下载失败:`, errorMsg)
+      logger.error(`❌ ${format} WASM 文件下载失败:`, errorMsg)
     }
   }
 
@@ -234,12 +236,12 @@ async function loadLocalWasm(format: OutputType): Promise<void> {
       const cachedResponse = await cache.match(localUrl)
 
       if (cachedResponse) {
-        console.log(`从缓存加载 ${format} WASM 文件`)
+        logger.log(`从缓存加载 ${format} WASM 文件`)
         // 这里简化处理，实际应该初始化WASM模块
         return
       }
     } catch (error) {
-      console.warn('Cache API not available:', error)
+      logger.warn('Cache API not available:', error)
     }
   }
 
@@ -264,7 +266,7 @@ async function loadLocalWasm(format: OutputType): Promise<void> {
     throw new Error(`Invalid local WASM file: ${localUrl}`)
   }
 
-  console.log(`✅ 本地 ${format} WASM 文件验证成功`)
+  logger.log(`✅ 本地 ${format} WASM 文件验证成功`)
 }
 
 // 获取文件类型对应的输出格式
@@ -318,7 +320,7 @@ export default async function compressWithJsquash(
   if (!isBrowser()) {
     // 在测试环境中静默短路以避免噪声日志
     if (!isVitest()) {
-      console.warn(
+      logger.warn(
         'JSQuash: non-browser environment detected; skipping WASM compression and returning original file',
       )
     }
@@ -396,7 +398,7 @@ export default async function compressWithJsquash(
 
     return compressedBlob
   } catch (error) {
-    console.error('JSQuash compression failed:', error)
+    logger.error('JSQuash compression failed:', error)
     // 压缩失败时返回原文件
     return file
   }

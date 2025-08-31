@@ -8,6 +8,7 @@ import { compressionQueue } from './utils/compressionQueue'
 import { compressionWorkerManager } from './utils/compressionWorker'
 import { preprocessImage } from './utils/preprocessImage'
 import type { PreprocessOptions } from './types'
+import logger from './utils/logger'
 
 // Enhanced compression options with queue and worker support
 export interface EnhancedCompressOptions extends CompressOptions {
@@ -88,7 +89,7 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
       })
       inputForCompression = pre.blob
     } catch (e) {
-      console.warn('Preprocess failed, fallback to original file:', e)
+      logger.warn('Preprocess failed, fallback to original file:', e)
     }
   }
 
@@ -161,9 +162,9 @@ async function compressDirectly<T extends CompressResultType>(
         file,
         options,
       )
-      console.log('Used worker compression for', file.name)
+      logger.log('Used worker compression for', file.name)
     } catch (error) {
-      console.warn(
+      logger.warn(
         'Worker compression failed, falling back to main thread:',
         error,
       )
@@ -208,14 +209,14 @@ function canUseWorkerForFile(file: File, options: CompressOptions): boolean {
   // Check file size (avoid transferring very large files to worker)
   const maxWorkerFileSize = 50 * 1024 * 1024 // 50MB
   if (file.size > maxWorkerFileSize) {
-    console.log('File too large for worker, using main thread')
+    logger.log('File too large for worker, using main thread')
     return false
   }
 
   // Check if EXIF preservation is required (might limit tool choice)
   if (options.preserveExif) {
     // EXIF preservation might require specific tools that work better in main thread
-    console.log(
+    logger.log(
       'EXIF preservation required, may use main thread for better compatibility',
     )
     return true // Still try worker, but tools will be filtered appropriately
@@ -261,7 +262,7 @@ export async function compressEnhancedBatch(
     if (result.status === 'fulfilled') {
       return result.value
     } else {
-      console.error(
+      logger.error(
         `Compression failed for file ${files[index].name}:`,
         result.reason,
       )

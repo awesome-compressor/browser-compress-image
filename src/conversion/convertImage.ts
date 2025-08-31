@@ -5,6 +5,7 @@ import {
   encodeWithCanvas,
   encodeIcoFromImage,
 } from './encoders'
+import logger from '../utils/logger'
 
 export async function convertImage(
   fileOrBlob: File | Blob,
@@ -31,7 +32,7 @@ export async function convertImage(
           // First try JSQuash for better quality
           blob = await encodeWithJsquash(file, targetFormat, quality)
         } catch (jsquashError) {
-          console.warn(
+          logger.warn(
             `JSQuash failed for ${targetFormat}, falling back to Canvas:`,
             jsquashError,
           )
@@ -56,6 +57,7 @@ export async function convertImage(
       duration,
     }
   } catch (error) {
+    logger.error('Image conversion failed:', error)
     if (error instanceof Error) {
       throw new Error(`Image conversion failed: ${error.message}`)
     }

@@ -49,7 +49,11 @@ export class CompressionWorkerManager {
     try {
       // Check if Worker is available
       if (typeof Worker === 'undefined') {
-        console.log('Web Workers not supported in this environment')
+        import('../utils/logger')
+          .then((m) =>
+            m.default.log('Web Workers not supported in this environment'),
+          )
+          .catch(() => {})
         return
       }
 
@@ -60,9 +64,17 @@ export class CompressionWorkerManager {
       await this.testWorkerSupport()
 
       this.isWorkerSupported = true
-      console.log('Compression workers initialized successfully')
+      import('../utils/logger')
+        .then((m) =>
+          m.default.log('Compression workers initialized successfully'),
+        )
+        .catch(() => {})
     } catch (error) {
-      console.warn('Worker support initialization failed:', error)
+      import('../utils/logger')
+        .then((m) =>
+          m.default.warn('Worker support initialization failed:', error),
+        )
+        .catch(() => {})
       this.isWorkerSupported = false
     }
   }
@@ -82,10 +94,10 @@ async function initializeTools() {
     // const browserImageCompression = await import('browser-image-compression');
     // const compressorjs = await import('compressorjs');
     
-    console.log('Compression tools initialized in worker');
+  console.log('Compression tools initialized in worker');
     return true;
   } catch (error) {
-    console.error('Failed to initialize compression tools in worker:', error);
+  console.error('Failed to initialize compression tools in worker:', error);
     return false;
   }
 }

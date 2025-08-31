@@ -160,7 +160,14 @@ export async function encodeIcoFromImage(
 
     return icoBlob
   } catch (error) {
-    console.error('ICO encoding failed:', error)
+    // Use logger if available at runtime (import not desirable in this helper)
+    try {
+      // dynamic import to avoid circular deps in some environments
+      const logger = await import('../utils/logger').then((m) => m.default)
+      logger.error('ICO encoding failed:', error)
+    } catch (e) {
+      /* ignore */
+    }
     throw new Error(
       `ICO encoding failed: ${error instanceof Error ? error.message : String(error)}`,
     )

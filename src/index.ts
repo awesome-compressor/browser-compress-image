@@ -64,6 +64,10 @@ export {
   type MemoryThresholds,
 } from './utils/memoryManager'
 
+// Expose internal logger so consumers can enable debug logs at runtime
+export { default as logger } from './utils/logger'
+export { setLogger, resetLogger } from './utils/logger'
+
 // Image preprocessing
 export { preprocessImage } from './utils/preprocessImage'
 export type { PreprocessOptions, CropRect, ResizeOptions } from './types'

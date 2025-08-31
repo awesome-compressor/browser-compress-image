@@ -78,7 +78,9 @@ export class PerformanceDetector {
       estimatedPerformance,
     }
 
-    console.log('Device detected:', this.deviceInfo)
+    import('../utils/logger')
+      .then((m) => m.default.log('Device detected:', this.deviceInfo))
+      .catch(() => {})
     return this.deviceInfo
   }
 
@@ -116,9 +118,13 @@ export class CompressionQueue {
   private constructor() {
     this.performanceDetector = PerformanceDetector.getInstance()
     this.maxConcurrency = this.performanceDetector.calculateOptimalConcurrency()
-    console.log(
-      `Compression queue initialized with concurrency: ${this.maxConcurrency}`,
-    )
+    import('../utils/logger')
+      .then((m) =>
+        m.default.log(
+          `Compression queue initialized with concurrency: ${this.maxConcurrency}`,
+        ),
+      )
+      .catch(() => {})
   }
 
   static getInstance(): CompressionQueue {
@@ -175,7 +181,11 @@ export class CompressionQueue {
   // Update max concurrency (useful for manual adjustment)
   setMaxConcurrency(newMax: number): void {
     this.maxConcurrency = Math.max(1, Math.min(10, newMax)) // Limit between 1-10
-    console.log(`Concurrency updated to: ${this.maxConcurrency}`)
+    import('../utils/logger')
+      .then((m) =>
+        m.default.log(`Concurrency updated to: ${this.maxConcurrency}`),
+      )
+      .catch(() => {})
     this.processQueue()
   }
 
@@ -195,7 +205,9 @@ export class CompressionQueue {
 
       // Execute task
       this.executeTask(task).catch((error) => {
-        console.error('Task execution error:', error)
+        import('../utils/logger')
+          .then((m) => m.default.error('Task execution error:', error))
+          .catch(() => {})
       })
     }
   }
@@ -203,7 +215,9 @@ export class CompressionQueue {
   // Execute a single compression task
   private async executeTask(task: CompressionTask): Promise<void> {
     try {
-      console.log(`Starting compression task: ${task.id}`)
+      import('../utils/logger')
+        .then((m) => m.default.log(`Starting compression task: ${task.id}`))
+        .catch(() => {})
 
       // Remove any cancel listener since task is now running
       if (task.cancelListener) {
@@ -232,13 +246,16 @@ export class CompressionQueue {
       this.running.delete(task.id)
       this.completed++
 
-      console.log(`Task completed: ${task.id}`)
+      import('../utils/logger')
+        .then((m) => m.default.log(`Task completed: ${task.id}`))
+        .catch(() => {})
       task.resolve(blob as Blob)
     } catch (error) {
       this.running.delete(task.id)
       this.failed++
-
-      console.error(`Task failed: ${task.id}`, error)
+      import('../utils/logger')
+        .then((m) => m.default.error(`Task failed: ${task.id}`, error))
+        .catch(() => {})
       task.reject(
         error instanceof Error ? error : new Error('Compression failed'),
       )
@@ -266,27 +283,39 @@ export class CompressionQueue {
       if (options && options.signal) {
         const sig = options.signal as AbortSignal
         const onAbort = () => {
-          console.log(
-            'compressionQueue: abort signal received for task',
-            taskId,
-          )
+          import('../utils/logger')
+            .then((m) =>
+              m.default.log(
+                'compressionQueue: abort signal received for task',
+                taskId,
+              ),
+            )
+            .catch(() => {})
           // If task still in queue, remove and reject
           const removed = this.removeTask(taskId)
           if (removed) {
-            console.log(
-              'compressionQueue: task removed from queue due to abort',
-              taskId,
-            )
+            import('../utils/logger')
+              .then((m) =>
+                m.default.log(
+                  'compressionQueue: task removed from queue due to abort',
+                  taskId,
+                ),
+              )
+              .catch(() => {})
             try {
               reject(new Error('Task cancelled'))
             } catch (e) {
               /* ignore */
             }
           } else {
-            console.log(
-              'compressionQueue: abort received but task already started or not in queue',
-              taskId,
-            )
+            import('../utils/logger')
+              .then((m) =>
+                m.default.log(
+                  'compressionQueue: abort received but task already started or not in queue',
+                  taskId,
+                ),
+              )
+              .catch(() => {})
           }
         }
 
