@@ -72,6 +72,52 @@
         </div>
       </div>
     </div>
+    <!-- Fullscreen popup modal (separate from dialog fullscreen) -->
+    <div
+      v-if="popupFullscreen.visible"
+      class="popup-fullscreen-overlay"
+      @click="closeFullscreenModal"
+    >
+      <div class="popup-fullscreen-content" @click.stop>
+        <div class="popup-header">
+          <button class="popup-close" @click="closeFullscreenModal">✕</button>
+        </div>
+        <div class="popup-body">
+          <div v-if="popupFullscreen.item" class="popup-comparison">
+            <img-comparison-slider
+              :value="sliderValue"
+              @input="onSliderInput"
+              class="popup-comparison-slider"
+            >
+              <img
+                slot="first"
+                :src="originalImageUrl"
+                alt="Original"
+                class="comparison-image"
+                :style="{
+                  transform: `translate(${imageTransform.x}px, ${imageTransform.y}px) scale(${imageZoom})`,
+                  transformOrigin: 'center center',
+                }"
+                loading="lazy"
+                decoding="sync"
+              />
+              <img
+                slot="second"
+                :src="popupFullscreen.item.url"
+                alt="Result"
+                class="comparison-image"
+                :style="{
+                  transform: `translate(${imageTransform.x}px, ${imageTransform.y}px) scale(${imageZoom})`,
+                  transformOrigin: 'center center',
+                }"
+                loading="lazy"
+                decoding="sync"
+              />
+            </img-comparison-slider>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- 格式转换对比面板 -->
     <div
@@ -214,6 +260,8 @@
                       @mouseup="handleImageMouseUp"
                       @touchstart="handleTouchStart"
                       @touchend="handleTouchEnd"
+                      @mouseenter="hoverActiveIdx = idx"
+                      @mouseleave="hoverActiveIdx = null"
                     >
                       <img-comparison-slider
                         ref="sliderRef"
@@ -252,91 +300,34 @@
                         />
                         <!-- eslint-enable -->
                       </img-comparison-slider>
-
-                      <!-- 图片信息覆盖层 -->
+                      <!-- Hover toolbar (appears on container hover, per-item) -->
                       <div
-                        class="image-overlay-info"
-                        :class="{
-                          'mobile-dragging': isMobileDragging,
-                          'pc-dragging': isPCDragging,
-                        }"
+                        v-if="hoverActiveIdx === idx"
+                        class="hover-overlay"
+                        @click.stop
                       >
-                        <div class="overlay-header">
-                          <div class="image-title">
-                            {{ conversionTargetName }} →
-                            {{ selectedTargetFormat.toUpperCase() }}
-                          </div>
-                          <div class="image-controls">
-                            <button
-                              class="control-btn"
-                              :disabled="imageZoom <= 0.1"
-                              title="缩小 (-)"
-                              @click="zoomOut"
-                            >
-                              <span>−</span>
-                            </button>
-                            <span class="zoom-info"
-                              >{{ Math.round(imageZoom * 100) }}%</span
-                            >
-                            <button
-                              class="control-btn"
-                              :disabled="imageZoom >= 5"
-                              title="放大 (+)"
-                              @click="zoomIn"
-                            >
-                              <span>+</span>
-                            </button>
-                            <button
-                              class="control-btn"
-                              title="重置缩放 (0)"
-                              @click="resetZoom"
-                            >
-                              <span>⌂</span>
-                            </button>
-                            <button
-                              class="control-btn"
-                              :title="
-                                isFullscreen
-                                  ? '退出全屏 (Esc)'
-                                  : '全屏 (Ctrl+F)'
-                              "
-                              @click="toggleFullscreen"
-                            >
-                              <span>⛶</span>
-                            </button>
-                            <!-- Crop toggle -->
-                            <button
-                              class="control-btn"
-                              :title="'Crop (toggle)'"
-                              @click="toggleCrop(idx)"
-                            >
-                              <span>✂️</span>
-                            </button>
-                          </div>
-                        </div>
-                        <div class="image-details">
-                          <span>{{
-                            r.meta.flow === 'C→T'
-                              ? 'Compress → Convert'
-                              : r.meta.flow === 'T'
-                                ? 'Convert Only'
-                                : 'Convert → Compress'
-                          }}</span>
-                          <span v-if="r.meta.tool"
-                            >Tool: {{ r.meta.tool }}</span
+                        <div class="hover-toolbar">
+                          <button
+                            class="hover-btn"
+                            title="Zoom In"
+                            @click.stop.prevent="zoomIn"
                           >
-                          <span>{{ formatFileSize(r.size || 0) }}</span>
-                          <span
-                            class="savings"
-                            :class="{
-                              'savings-negative': (r.compressionRatio || 0) < 0,
-                            }"
+                            +
+                          </button>
+                          <button
+                            class="hover-btn"
+                            title="Zoom Out"
+                            @click.stop.prevent="zoomOut"
                           >
-                            ({{ (r.compressionRatio || 0) < 0 ? '+' : '-'
-                            }}{{
-                              Math.abs(r.compressionRatio || 0).toFixed(1)
-                            }}%)
-                          </span>
+                            −
+                          </button>
+                          <button
+                            class="hover-btn"
+                            title="Open Fullscreen Popup"
+                            @click.stop.prevent="openFullscreenModal(idx, r)"
+                          >
+                            ⛶
+                          </button>
                         </div>
                       </div>
                       <!-- Crop capture overlay (only when cropping this item) -->
@@ -495,6 +486,16 @@ const isFullscreen = ref(false) // 全屏状态
 const imageTransform = ref({ x: 0, y: 0 }) // 图片位移
 const isMobileDragging = ref(false)
 const isPCDragging = ref(false)
+
+// Hover overlay state per conversion item
+const hoverActiveIdx = ref<number | null>(null)
+
+// Fullscreen popup modal (separate from dialog's fullscreen mode)
+const popupFullscreen = ref<{
+  visible: boolean
+  idx: number | null
+  item: ConversionCompareItemWithUrl | null
+}>({ visible: false, idx: null, item: null })
 
 // 比较滑块状态（0-100）
 const sliderValue = ref(50)
@@ -976,6 +977,16 @@ function handleKeydown(e: KeyboardEvent) {
     cancelFormatSelection()
     return
   }
+  // If popup fullscreen overlay is open, close it first on Escape
+  if (
+    e.key === 'Escape' &&
+    popupFullscreen.value &&
+    popupFullscreen.value.visible
+  ) {
+    closeFullscreenModal()
+    return
+  }
+
   // If conversion panel is open, handle Escape specially:
   // - if fullscreen: exit fullscreen
   // - otherwise: close the conversion panel
@@ -1027,6 +1038,21 @@ function handleTouchStart(e: TouchEvent) {
 function handleTouchEnd() {
   // 触摸结束时恢复显示
   isMobileDragging.value = false
+}
+
+function openFullscreenModal(idx: number, item: ConversionCompareItemWithUrl) {
+  // show a separate fullscreen popup that overlays the page
+  popupFullscreen.value = { visible: true, idx, item }
+  // reset transform/zoom so image is centered in the popup
+  imageTransform.value = { x: 0, y: 0 }
+  imageZoom.value = 1
+  nextTick(() => {
+    constrainImagePosition()
+  })
+}
+
+function closeFullscreenModal() {
+  popupFullscreen.value = { visible: false, idx: null, item: null }
 }
 
 // PC端鼠标事件处理
@@ -1197,6 +1223,102 @@ defineExpose({
   gap: 2px;
   flex: 1;
   overflow: hidden;
+}
+
+/* Hover overlay toolbar inside comparison-container */
+.comparison-container {
+  position: relative;
+}
+
+.hover-overlay {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 30;
+  pointer-events: auto;
+}
+
+.hover-toolbar {
+  display: flex;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  padding: 6px 8px;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  align-items: center;
+}
+
+.hover-btn {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+/* Popup fullscreen overlay styles */
+.popup-fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10050;
+}
+
+.popup-fullscreen-content {
+  width: 90vw;
+  height: 90vh;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.popup-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px;
+}
+
+.popup-close {
+  background: rgba(255, 255, 255, 0.06);
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.popup-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.popup-comparison {
+  width: 100%;
+  height: 100%;
+}
+
+.popup-comparison-slider {
+  width: 100%;
+  height: 100%;
+}
+/* Ensure images inside popup are centered and contained */
+.popup-comparison-slider img,
+.popup-comparison-slider .comparison-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  margin: 0 auto;
+  object-fit: contain;
 }
 
 .format-title-main {
