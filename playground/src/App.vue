@@ -2932,51 +2932,6 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       @close="closeComparePanel"
     >
       <div class="compare-panel">
-        <!-- 顶部摘要区域 -->
-        <div
-          v-if="!compareLoading && compareResults.length > 0"
-          class="compare-summary"
-        >
-          <div class="summary-header">
-            <div class="summary-title">
-              <span class="file-icon">📊</span>
-              <span class="file-name">{{ compareTargetName }}</span>
-            </div>
-            <div v-if="compareBestTool" class="summary-best">
-              <span class="best-label">Best Result:</span>
-              <span class="best-tool">{{ compareBestTool }}</span>
-              <span class="best-metrics">
-                {{
-                  formatFileSize(
-                    compareResults.find((r) => r.tool === compareBestTool)
-                      ?.compressedSize || 0,
-                  )
-                }}
-                <span
-                  class="ratio"
-                  :class="{
-                    neg:
-                      (compareResults.find((r) => r.tool === compareBestTool)
-                        ?.compressionRatio || 0) < 0,
-                  }"
-                >
-                  {{
-                    (compareResults.find((r) => r.tool === compareBestTool)
-                      ?.compressionRatio || 0) < 0
-                      ? '+'
-                      : '-'
-                  }}{{
-                    Math.abs(
-                      compareResults.find((r) => r.tool === compareBestTool)
-                        ?.compressionRatio || 0,
-                    ).toFixed(1)
-                  }}%
-                </span>
-              </span>
-            </div>
-          </div>
-        </div>
-
         <div v-if="compareLoading" class="compare-loading">
           <div class="loading-content">
             <el-icon class="is-loading" size="32px">

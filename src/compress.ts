@@ -92,7 +92,7 @@ interface CompressionAttempt {
 const toolsCollections: Record<string, CompressorTool[]> = {
   png: ['jsquash', 'browser-image-compression', 'canvas'],
   gif: ['gifsicle'],
-  webp: ['jsquash', 'canvas', 'browser-image-compression'],
+  webp: ['canvas', 'browser-image-compression'],
   jpeg: ['jsquash', 'compressorjs', 'canvas', 'browser-image-compression'],
   others: ['jsquash', 'browser-image-compression', 'canvas'],
 }

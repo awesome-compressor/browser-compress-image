@@ -132,7 +132,7 @@
               class="conversion-list"
             >
               <div
-                v-for="r in conversionResults"
+                v-for="(r, idx) in conversionResults"
                 :key="`${r.meta.flow}-${r.meta.tool || 'direct'}`"
                 class="conversion-item"
                 :class="{
@@ -216,8 +216,10 @@
                       @touchend="handleTouchEnd"
                     >
                       <img-comparison-slider
+                        ref="sliderRef"
                         class="conversion-comparison-slider"
-                        value="50"
+                        :value="sliderValue"
+                        @input="onSliderInput"
                         @mousedown="handleMouseDown"
                         @mouseup="handleMouseUp"
                       >
@@ -302,6 +304,14 @@
                             >
                               <span>⛶</span>
                             </button>
+                            <!-- Crop toggle -->
+                            <button
+                              class="control-btn"
+                              :title="'Crop (toggle)'"
+                              @click="toggleCrop(idx)"
+                            >
+                              <span>✂️</span>
+                            </button>
                           </div>
                         </div>
                         <div class="image-details">
@@ -327,6 +337,41 @@
                               Math.abs(r.compressionRatio || 0).toFixed(1)
                             }}%)
                           </span>
+                        </div>
+                      </div>
+                      <!-- Crop capture overlay (only when cropping this item) -->
+                      <div
+                        v-if="isCroppingFor(idx)"
+                        class="crop-capture-overlay"
+                        @mousedown.prevent.stop="startCrop($event, idx)"
+                        @mousemove.prevent.stop="updateCrop($event)"
+                        @mouseup.prevent.stop="endCrop($event, idx)"
+                        @mouseleave.prevent.stop="endCrop($event, idx)"
+                      >
+                        <div
+                          v-if="cropRect.width > 0 && cropRect.height > 0"
+                          class="crop-rect"
+                          :style="{
+                            left: cropRect.x + 'px',
+                            top: cropRect.y + 'px',
+                            width: cropRect.width + 'px',
+                            height: cropRect.height + 'px',
+                          }"
+                        />
+
+                        <div class="crop-actions">
+                          <button
+                            class="control-btn"
+                            @click="applyCrop(idx, r)"
+                          >
+                            Apply Crop
+                          </button>
+                          <button class="control-btn" @click="resetCrop(idx)">
+                            Reset Crop
+                          </button>
+                          <button class="control-btn" @click="toggleCrop(null)">
+                            Close Crop
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -450,6 +495,77 @@ const isFullscreen = ref(false) // 全屏状态
 const imageTransform = ref({ x: 0, y: 0 }) // 图片位移
 const isMobileDragging = ref(false)
 const isPCDragging = ref(false)
+
+// 比较滑块状态（0-100）
+const sliderValue = ref(50)
+const sliderRef = ref<HTMLElement | null>(null)
+
+function onSliderInput(e: any) {
+  // img-comparison-slider may emit a CustomEvent with detail.value or provide value on target
+  const v = Number(e?.detail?.value ?? e?.target?.value ?? e)
+  if (!Number.isNaN(v)) sliderValue.value = Math.max(0, Math.min(100, v))
+}
+
+// Cropping state (UI-only capture, non-destructive)
+const croppingIndex = ref<number | null>(null)
+const cropRect = ref({ x: 0, y: 0, width: 0, height: 0 })
+let cropStartX = 0
+let cropStartY = 0
+let croppingActive = false
+
+function toggleCrop(idx: number | null) {
+  if (idx === null) {
+    croppingIndex.value = null
+    cropRect.value = { x: 0, y: 0, width: 0, height: 0 }
+    return
+  }
+  croppingIndex.value = idx
+  cropRect.value = { x: 0, y: 0, width: 0, height: 0 }
+}
+
+function isCroppingFor(idx: number) {
+  return croppingIndex.value === idx
+}
+
+function startCrop(e: MouseEvent, idx: number) {
+  if (croppingIndex.value !== idx) return
+  croppingActive = true
+  const container = e.currentTarget as HTMLElement
+  const rect = container.getBoundingClientRect()
+  cropStartX = e.clientX - rect.left
+  cropStartY = e.clientY - rect.top
+  cropRect.value = { x: cropStartX, y: cropStartY, width: 0, height: 0 }
+}
+
+function updateCrop(e: MouseEvent) {
+  if (!croppingActive) return
+  const container = e.currentTarget as HTMLElement
+  const rect = container.getBoundingClientRect()
+  const curX = e.clientX - rect.left
+  const curY = e.clientY - rect.top
+  const x = Math.min(cropStartX, curX)
+  const y = Math.min(cropStartY, curY)
+  const width = Math.abs(curX - cropStartX)
+  const height = Math.abs(curY - cropStartY)
+  cropRect.value = { x, y, width, height }
+}
+
+function endCrop(_e: MouseEvent, idx: number) {
+  if (croppingIndex.value !== idx) return
+  croppingActive = false
+}
+
+function applyCrop(idx: number, r: ConversionCompareItemWithUrl) {
+  // For safety, we just show a message that crop would be applied.
+  // Actual image manipulation is out of scope here.
+  ElMessage.info(
+    'Apply crop: not implemented - this captures the selection only',
+  )
+}
+
+function resetCrop(_idx: number) {
+  cropRect.value = { x: 0, y: 0, width: 0, height: 0 }
+}
 
 // 预选择格式的对话框状态
 const showFormatSelectDialog = ref(false)
@@ -860,16 +976,22 @@ function handleKeydown(e: KeyboardEvent) {
     cancelFormatSelection()
     return
   }
+  // If conversion panel is open, handle Escape specially:
+  // - if fullscreen: exit fullscreen
+  // - otherwise: close the conversion panel
+  if (e.key === 'Escape' && showConversionPanel.value) {
+    if (isFullscreen.value) {
+      toggleFullscreen()
+    } else {
+      closeConversionPanel()
+    }
+    return
+  }
 
-  // 处理转换面板的键盘快捷键
+  // 处理转换面板的键盘快捷键（其余快捷键仅在全屏时有效）
   if (!showConversionPanel.value || !isFullscreen.value) return
 
   switch (e.key) {
-    case 'Escape':
-      if (isFullscreen.value) {
-        toggleFullscreen()
-      }
-      break
     case '+':
     case '=':
       e.preventDefault()
