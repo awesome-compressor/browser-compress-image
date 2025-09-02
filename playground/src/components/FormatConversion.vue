@@ -76,6 +76,9 @@
     <div
       v-if="popupFullscreen.visible"
       class="popup-fullscreen-overlay"
+      :style="{
+        top: scrollTop + 'px'
+      }"
       @click="closeFullscreenModal"
     >
       <div class="popup-fullscreen-content" @click.stop>
@@ -1043,6 +1046,7 @@ function handleTouchEnd() {
 function openFullscreenModal(idx: number, item: ConversionCompareItemWithUrl) {
   // show a separate fullscreen popup that overlays the page
   popupFullscreen.value = { visible: true, idx, item }
+  debugger
   // reset transform/zoom so image is centered in the popup
   imageTransform.value = { x: 0, y: 0 }
   imageZoom.value = 1
@@ -1261,11 +1265,14 @@ defineExpose({
 /* Popup fullscreen overlay styles */
 .popup-fullscreen-overlay {
   position: fixed;
-  inset: 0;
   background: rgba(0, 0, 0, 0.85);
   display: flex;
-  align-items: center;
+  left: 0;
+  width: 100%;
+  top: 0;
+  padding-top: 15%;
   justify-content: center;
+  height: 100%;
   z-index: 10050;
 }
 
