@@ -184,10 +184,11 @@
                 v-for="(r, idx) in conversionResults"
                 :key="`${r.meta.flow}-${r.meta.tool || 'direct'}`"
                 class="conversion-item"
-                :class="{
-                  success: r.success,
-                  fail: !r.success,
-                }"
+                  :class="{
+                    success: r.success,
+                    fail: !r.success,
+                    best: r.isBest,
+                  }"
               >
                 <div class="conversion-header">
                   <div class="flow-label">
@@ -206,6 +207,8 @@
                     <span v-if="r.meta.tool" class="tool-name">{{
                       r.meta.tool
                     }}</span>
+                    <!-- 最佳压缩率标识 -->
+                    <span v-if="r.isBest" class="best-compression-badge">最佳压缩</span>
                   </div>
                   <div v-if="r.success" class="conversion-metrics">
                     <span class="metric size">{{
@@ -427,6 +430,10 @@ import('img-comparison-slider')
 // 扩展转换对比项类型以包含url属性
 interface ConversionCompareItemWithUrl extends ConversionCompareItem {
   url?: string
+  // 标记该结果是否为压缩率最高
+  isBest?: boolean
+  // 相对于原始文件的压缩率（百分比，正为减小）
+  compressionRatio?: number
 }
 
 // 定义组件属性
@@ -737,6 +744,9 @@ async function openConversionPanel(item: {
         }
       },
     )
+  // 计算压缩率并标记最佳，然后按压缩率排序（降序）
+  markBestCompression(item.file.size)
+  sortConversionResultsByCompression()
   } catch (err) {
     console.error('Conversion comparison failed:', err)
     ElMessage.error(
@@ -745,6 +755,47 @@ async function openConversionPanel(item: {
   } finally {
     conversionLoading.value = false
   }
+}
+
+// 计算每个成功结果相对于原始文件的压缩率并标记压缩率最高的项
+function markBestCompression(originalSize: number) {
+  if (!originalSize || !conversionResults.value.length) return
+  // 计算每项的压缩率（以百分比表示），正值表示变小（压缩）
+  conversionResults.value.forEach((r) => {
+    if (r.success && typeof r.size === 'number') {
+      // 压缩率定义为 (原始 - 新) / 原始 * 100
+      r.compressionRatio = ((originalSize - r.size) / originalSize) * 100
+    } else {
+      r.compressionRatio = undefined
+    }
+    r.isBest = false
+  })
+
+  // 找到最大 compressionRatio 的项
+  const valid = conversionResults.value.filter(
+    (r) => r.success && typeof r.compressionRatio === 'number',
+  )
+  if (!valid.length) return
+  let best = valid[0]
+  for (const v of valid) {
+    if ((v.compressionRatio ?? -Infinity) > (best.compressionRatio ?? -Infinity)) {
+      best = v
+    }
+  }
+  best.isBest = true
+}
+
+// 按 compressionRatio 从大到小排序，缺失 compressionRatio 的项排在后面
+function sortConversionResultsByCompression() {
+  if (!conversionResults.value.length) return
+  conversionResults.value = conversionResults.value
+    .slice()
+    .sort((a, b) => {
+      const ra = typeof a.compressionRatio === 'number' ? a.compressionRatio : -Infinity
+      const rb = typeof b.compressionRatio === 'number' ? b.compressionRatio : -Infinity
+      // 降序
+      return rb - ra
+    })
 }
 
 function closeConversionPanel() {
@@ -1598,7 +1649,33 @@ defineExpose({
   position: relative;
   backdrop-filter: blur(10px);
   min-width: 120px;
-  justify-content: center;
+
+}
+
+/* 最佳压缩标识样式 */
+.best-compression-badge {
+  margin-left: 10px;
+  background: linear-gradient(90deg, #10b981 0%, #6366f1 100%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.12);
+  display: inline-block;
+  vertical-align: middle;
+  animation: pulseBest 1.2s infinite;
+}
+
+@keyframes pulseBest {
+  0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.28); }
+  70% { box-shadow: 0 0 0 8px rgba(16,185,129,0); }
+  100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.28); }
+}
+
+.conversion-item.best {
+  border-color: #10b981 !important;
+  box-shadow: 0 6px 20px rgba(16,185,129,0.08);
 }
 
 .format-btn-secondary {
