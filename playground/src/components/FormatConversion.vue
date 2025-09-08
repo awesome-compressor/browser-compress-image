@@ -25,7 +25,12 @@
         <!-- 格式选择区域 -->
         <div class="format-select-content">
           <div class="format-select-description">
-            Choose the target format for your image conversion:
+            <template v-if="targetImageItem && (targetImageItem.file.type === 'image/svg+xml' || targetImageItem.file.name.toLowerCase().endsWith('.svg'))">
+              Convert your SVG to a raster format:
+            </template>
+            <template v-else>
+              Choose the target format for your image conversion:
+            </template>
           </div>
 
           <div class="format-options-grid">
@@ -50,6 +55,38 @@
                   >
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- SVG转换选项 -->
+          <div v-if="targetImageItem && (targetImageItem.file.type === 'image/svg+xml' || targetImageItem.file.name.toLowerCase().endsWith('.svg'))" class="svg-conversion-options">
+            <div class="svg-options-title">SVG Conversion Settings</div>
+            <div class="svg-options-grid">
+              <div class="svg-option-group">
+                <label class="svg-option-label">Width (optional)</label>
+                <input 
+                  v-model.number="svgWidth" 
+                  type="number" 
+                  class="svg-option-input" 
+                  placeholder="Auto" 
+                  min="1" 
+                  max="4096"
+                />
+              </div>
+              <div class="svg-option-group">
+                <label class="svg-option-label">Height (optional)</label>
+                <input 
+                  v-model.number="svgHeight" 
+                  type="number" 
+                  class="svg-option-input" 
+                  placeholder="Auto" 
+                  min="1" 
+                  max="4096"
+                />
+              </div>
+            </div>
+            <div class="svg-options-hint">
+              Leave empty for original SVG dimensions. Aspect ratio will be preserved.
             </div>
           </div>
         </div>
@@ -593,6 +630,10 @@ const scrollTop = ref(0)
 const appContainer = ref<HTMLElement | null>(null)
 const appElement = ref<HTMLElement | null>(null)
 
+// SVG转换选项
+const svgWidth = ref<number | undefined>(undefined)
+const svgHeight = ref<number | undefined>(undefined)
+
 // 恢复滚动状态的统一函数
 function restoreScrollState() {
   // 恢复app-container滚动
@@ -623,6 +664,10 @@ function openFormatSelectDialog(item: {
 }) {
   targetImageItem.value = item
   targetImageName.value = item.file.name
+  
+  // Reset SVG dimensions
+  svgWidth.value = undefined
+  svgHeight.value = undefined
 
   // 获取app-container元素
   appContainer.value = document.querySelector('.app-container') as HTMLElement
@@ -711,11 +756,14 @@ async function openConversionPanel(item: {
     )
 
     // 构建转换对比数据
-    // ICO格式特殊处理：不支持压缩，只进行格式转换
+    // ICO格式和SVG源文件特殊处理：不支持压缩，只进行格式转换
     const isICO = selectedTargetFormat.value === 'ico'
+    const isSvgSource = item.file.type === 'image/svg+xml' || item.file.name.toLowerCase().endsWith('.svg')
+    const skipCompression = isICO || isSvgSource
+    
     const conversionColumn = await buildConversionColumn({
       file: item.file,
-      compressOptions: isICO
+      compressOptions: skipCompression
         ? undefined
         : {
             quality: item.quality,
@@ -726,6 +774,10 @@ async function openConversionPanel(item: {
       convertOptions: {
         targetFormat: selectedTargetFormat.value,
         quality: 0.8, // 转换质量设置
+        ...(isSvgSource && (svgWidth.value || svgHeight.value) ? {
+          width: svgWidth.value,
+          height: svgHeight.value,
+        } : {}),
       },
     })
 
@@ -749,9 +801,22 @@ async function openConversionPanel(item: {
   sortConversionResultsByCompression()
   } catch (err) {
     console.error('Conversion comparison failed:', err)
-    ElMessage.error(
-      err instanceof Error ? err.message : 'Failed to compare conversions',
-    )
+    
+    // SVG-specific error handling
+    let errorMessage = 'Failed to compare conversions'
+    if (isSvgSource && err instanceof Error) {
+      if (err.message.includes('SVG')) {
+        errorMessage = `SVG conversion failed: ${err.message}`
+      } else if (err.message.includes('width') || err.message.includes('height')) {
+        errorMessage = 'Invalid SVG dimensions. Please check your width and height values.'
+      } else {
+        errorMessage = `SVG conversion failed: ${err.message}`
+      }
+    } else if (err instanceof Error) {
+      errorMessage = err.message
+    }
+    
+    ElMessage.error(errorMessage)
   } finally {
     conversionLoading.value = false
   }
@@ -1724,6 +1789,79 @@ defineExpose({
   transform: scale(1.1);
 }
 
+/* SVG转换选项样式 */
+.svg-conversion-options {
+  margin-top: 24px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.06) 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.svg-options-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #10b981;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.svg-options-title::before {
+  content: '⚙️';
+  font-size: 16px;
+}
+
+.svg-options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.svg-option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.svg-option-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #047857;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.svg-option-input {
+  padding: 8px 12px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.svg-option-input:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.svg-option-input::placeholder {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.svg-options-hint {
+  font-size: 11px;
+  color: #059669;
+  opacity: 0.8;
+  font-style: italic;
+  text-align: center;
+}
+
 /* 响应式设计 */
 @media (max-width: 640px) {
   .format-select-dialog {
@@ -1784,6 +1922,16 @@ defineExpose({
   .format-check-circle {
     width: 26px;
     height: 26px;
+  }
+
+  .svg-options-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .svg-conversion-options {
+    margin-top: 16px;
+    padding: 16px;
   }
 }
 

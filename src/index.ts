@@ -72,6 +72,21 @@ export { setLogger, resetLogger } from './utils/logger'
 export { preprocessImage } from './utils/preprocessImage'
 export type { PreprocessOptions, CropRect, ResizeOptions } from './types'
 
+// Image conversion (including SVG support)
+export {
+  convertImage,
+  renderSvgToCanvas,
+  encodeSvgToFormat,
+  detectFileFormat,
+  isSvgContent,
+} from './conversion'
+export type {
+  TargetFormat,
+  SourceFormat,
+  ImageConvertOptions,
+  ImageConvertResult,
+} from './conversion'
+
 // JSQuash WASM helpers (for PWA warm-up and diagnostics)
 export {
   ensureWasmLoaded,

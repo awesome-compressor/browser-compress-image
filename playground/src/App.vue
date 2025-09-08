@@ -41,6 +41,8 @@ import {
   getCompressionStats,
   memoryManager,
   waitForCompressionInitialization,
+  convertImage,
+  detectFileFormat,
 } from '../../src'
 
 import CropPage from './CropPage.vue'
@@ -90,6 +92,9 @@ interface ImageItem {
   qualityDragging: number // 拖动过程中的临时质量值
   // 预处理参数（裁剪/旋转/缩放）
   preprocess?: import('../../src').PreprocessOptions
+  // SVG-specific properties
+  isSvg?: boolean // 标记是否为SVG文件
+  sourceFormat?: string // 源文件格式（用于检测SVG）
 }
 
 // FormatConversion组件引用
@@ -649,6 +654,7 @@ const supportType = [
   'image/jpeg',
   'image/gif',
   'image/webp',
+  'image/svg+xml',
 ]
 
 // 检查并过滤不支持的文件，显示提示信息
@@ -708,7 +714,7 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
             style:
               'font-size: 12px; opacity: 0.7; border-top: 1px solid #e2e8f0; padding-top: 4px',
           },
-          '✅ 支持的格式: PNG, JPG, JPEG, GIF, WebP',
+          '✅ 支持的格式: PNG, JPG, JPEG, GIF, WebP, SVG',
         ),
       ]),
       type: 'warning',
@@ -1367,17 +1373,24 @@ async function addNewImages(files: File[]) {
   }
 
   // 创建图片项目
-  const newItems: ImageItem[] = files.map((file) => ({
-    id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    file,
-    originalUrl: URL.createObjectURL(file),
-    originalSize: file.size,
-    isCompressing: false,
-    isUploading: true,
-    quality: globalQuality.value,
-    isQualityCustomized: false,
-    qualityDragging: globalQuality.value,
-  }))
+  const newItems: ImageItem[] = files.map((file) => {
+    const sourceFormat = detectFileFormat(file)
+    const isSvg = sourceFormat === 'svg'
+    
+    return {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      file,
+      originalUrl: URL.createObjectURL(file),
+      originalSize: file.size,
+      isCompressing: false,
+      isUploading: true,
+      quality: globalQuality.value,
+      isQualityCustomized: false,
+      qualityDragging: globalQuality.value,
+      isSvg,
+      sourceFormat,
+    }
+  })
 
   // 先添加到列表中显示加载/上传状态
   // create upload controllers for each new item so user can cancel during "upload"
@@ -1408,52 +1421,73 @@ async function addNewImages(files: File[]) {
     const baseTimeout = Math.max(30000, files.length * 10000)
     const deviceTimeout = getDeviceBasedTimeout(baseTimeout)
 
-    // 逐个压缩以实现实时进度更新
+    // 逐个处理以实现实时进度更新
     let successfulCount = 0
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       const item = newItems[i]
 
       try {
-        // transition from upload -> compress: if item was uploading and not canceled
-        // remove upload controller and create a fresh controller for compression
+        // transition from upload -> process: if item was uploading and not canceled
+        // remove upload controller and create a fresh controller for processing
         cleanupController(item.id)
-        // mark as compressing now
+        // mark as processing now
         updateImageItem(item, { isUploading: false, isCompressing: true })
         const controller = createControllerForItem(item.id)
 
-        // 使用增强的单个压缩 - 自动队列管理和Worker支持
-        const result = await compressEnhanced(file, {
-          quality: globalQuality.value,
-          preserveExif: preserveExif.value,
-          toolConfigs: enabledToolConfigs,
-          useWorker: true,
-          useQueue: true,
-          timeout: deviceTimeout, // 使用设备适配的超时时间
-          signal: controller.signal,
-          type: 'blob',
-        })
+        let result: Blob
 
-        // 更新单个图片的压缩结果
-        updateImageItem(item, {
-          compressedUrl: URL.createObjectURL(result),
-          compressedSize: result.size,
-          compressionRatio:
-            ((item.originalSize - result.size) / item.originalSize) * 100,
-          isCompressing: false,
-        })
+        if (item.isSvg) {
+          // SVG files skip compression and are ready for conversion
+          console.log(`📄 SVG detected: ${file.name}, skipping compression`)
+          
+          // For SVG, we just use the original file as the "compressed" result
+          // This allows the user to see the SVG and access format conversion
+          result = file
+          
+          // Mark as successfully processed
+          updateImageItem(item, {
+            compressedUrl: item.originalUrl, // Use original URL since no compression needed
+            compressedSize: item.originalSize, // Original size
+            compressionRatio: 0, // No compression for SVG
+            isCompressing: false,
+          })
+          
+          console.log(`✅ SVG processed ${i + 1}/${files.length}: ${file.name}`)
+        } else {
+          // Regular image files - use compression
+          result = await compressEnhanced(file, {
+            quality: globalQuality.value,
+            preserveExif: preserveExif.value,
+            toolConfigs: enabledToolConfigs,
+            useWorker: true,
+            useQueue: true,
+            timeout: deviceTimeout, // 使用设备适配的超时时间
+            signal: controller.signal,
+            type: 'blob',
+          })
+
+          // 更新单个图片的压缩结果
+          updateImageItem(item, {
+            compressedUrl: URL.createObjectURL(result),
+            compressedSize: result.size,
+            compressionRatio:
+              ((item.originalSize - result.size) / item.originalSize) * 100,
+            isCompressing: false,
+          })
+
+          console.log(`✅ Compressed ${i + 1}/${files.length}: ${file.name}`)
+        }
 
         successfulCount++
 
         // 实时更新进度
         compressionProgress.value.current = i + 1
 
-        console.log(`✅ Compressed ${i + 1}/${files.length}: ${file.name}`)
-        // cleanup controller after success
         // cleanup controller after success
         cleanupController(item.id)
       } catch (error) {
-        console.error(`❌ Failed to compress ${file.name}:`, error)
+        console.error(`❌ Failed to process ${file.name}:`, error)
         item.isCompressing = false
         // ensure controller cleaned on failure
         cleanupController(item.id)
@@ -1462,7 +1496,7 @@ async function addNewImages(files: File[]) {
         // ensure controller cleaned on failure
         cleanupController(item.id)
         item.compressionError =
-          error instanceof Error ? error.message : 'Compression failed'
+          error instanceof Error ? error.message : 'Processing failed'
 
         // 即使失败也要更新进度
         compressionProgress.value.current = i + 1
@@ -1512,6 +1546,24 @@ async function compressImage(item: ImageItem): Promise<void> {
   try {
     // create abort controller for this item
     const controller = createControllerForItem(item.id)
+
+    // Handle SVG files differently
+    if (item.isSvg) {
+      // SVG files don't need compression, just mark as processed
+      console.log(`📄 SVG reprocessing skipped: ${item.file.name}`)
+      
+      // Keep the original as the "compressed" version
+      updateImageItem(item, {
+        compressedUrl: item.originalUrl,
+        compressedSize: item.originalSize,
+        compressionRatio: 0, // No compression for SVG
+      })
+      
+      // 强制触发响应式更新
+      triggerRef(imageItems)
+      return
+    }
+
     // 过滤出启用的工具配置
     const enabledToolConfigs = toolConfigs.value.filter(
       (config) => config.enabled && config.key.trim(),
@@ -1538,7 +1590,7 @@ async function compressImage(item: ImageItem): Promise<void> {
       return
     }
 
-    if (item.compressedUrl) {
+    if (item.compressedUrl && item.compressedUrl !== item.originalUrl) {
       URL.revokeObjectURL(item.compressedUrl)
     }
 
@@ -1552,13 +1604,13 @@ async function compressImage(item: ImageItem): Promise<void> {
     // 强制触发响应式更新
     triggerRef(imageItems)
   } catch (error) {
-    console.error('Enhanced compression error:', error)
+    console.error('Enhanced processing error:', error)
     item.compressionError =
-      error instanceof Error ? error.message : 'Compression failed'
+      error instanceof Error ? error.message : 'Processing failed'
 
     // 显示具体错误信息
     ElMessage({
-      message: `Compression failed for ${item.file.name}: ${item.compressionError}`,
+      message: `Processing failed for ${item.file.name}: ${item.compressionError}`,
       type: 'error',
     })
   } finally {
@@ -2210,7 +2262,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
           </el-icon>
           <span class="upload-text">Drop, Paste or Click to Upload Images</span>
           <span class="upload-hint">
-            Support PNG, JPG, JPEG, GIF formats • Multiple files & folders
+            Support PNG, JPG, JPEG, GIF, WebP, SVG formats • Multiple files & folders
             supported • Use Ctrl+V to paste images
           </span>
         </button>
@@ -2420,13 +2472,24 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 <div class="image-name" :title="item.file.name">
                   {{ item.file.name }}
                 </div>
-                <div class="image-format">
-                  {{ item.file.type.split('/')[1].toUpperCase() }}
+                <div class="image-format" :class="{ 'svg-format': item.isSvg }">
+                  {{ item.isSvg ? 'SVG' : item.file.type.split('/')[1].toUpperCase() }}
                 </div>
               </div>
 
               <div class="image-stats">
-                <div class="compression-result">
+                <!-- SVG files show simple size info -->
+                <div v-if="item.isSvg" class="svg-info">
+                  <div class="svg-size-info">
+                    <span class="size-label">SVG File Size</span>
+                    <span class="size-value">{{ formatFileSize(item.originalSize) }}</span>
+                  </div>
+                  <div class="svg-conversion-hint">
+                    Ready for format conversion
+                  </div>
+                </div>
+                <!-- Regular images show compression results -->
+                <div v-else class="compression-result">
                   <div class="size-comparison">
                     <div class="size-item">
                       <span class="size-label">Original</span>
@@ -2466,8 +2529,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 </div>
               </div>
 
-              <!-- 独立的质量控制 -->
-              <div class="image-quality-control">
+              <!-- 独立的质量控制 - 仅对非SVG文件显示 -->
+              <div v-if="!item.isSvg" class="image-quality-control">
                 <div class="quality-header">
                   <div class="quality-info">
                     <span class="quality-label">Quality</span>
@@ -2761,7 +2824,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       id="file"
       ref="fileRef"
       type="file"
-      accept="image/png,image/jpg,image/jpeg,image/gif,image/webp"
+      accept="image/png,image/jpg,image/jpeg,image/gif,image/webp,image/svg+xml,.svg"
       multiple
       hidden
       @change="handleFileInputChange"
@@ -5037,11 +5100,55 @@ img-comparison-slider img,
   flex-shrink: 0;
 }
 
+.image-format.svg-format {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
 /* 图片统计信息 */
 .image-stats {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* SVG文件特殊显示 */
+.svg-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.svg-size-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.svg-size-info .size-label {
+  font-size: 10px;
+  color: #6b7280;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.svg-size-info .size-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+}
+
+.svg-conversion-hint {
+  font-size: 10px;
+  color: #10b981;
+  text-align: center;
+  font-style: italic;
+  opacity: 0.8;
 }
 
 .compression-result {
