@@ -1280,7 +1280,8 @@ defineExpose({
     0 16px 40px rgba(99, 102, 241, 0.08),
     0 4px 12px rgba(0, 0, 0, 0.05);
   animation: slideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes slideUp {
@@ -1298,9 +1299,11 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 28px 28px 0;
+  padding: 28px 28px 24px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  margin-bottom: 24px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(20px);
 }
 
 .format-dialog-title {
@@ -1505,13 +1508,40 @@ defineExpose({
 }
 
 .format-select-content {
-  padding: 0 28px 28px;
+  padding: 0 28px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  max-height: calc(90vh - 200px);
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Scrollbar styling for the content area */
+.format-select-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.format-select-content::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+.format-select-content::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.2);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.format-select-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.4);
 }
 
 .format-select-description {
   font-size: 15px;
   color: #6b7280;
-  margin-bottom: 28px;
+  margin: 28px 0;
   line-height: 1.6;
   font-weight: 500;
 }
@@ -1698,6 +1728,8 @@ defineExpose({
     transparent 0%,
     rgba(248, 250, 252, 0.5) 100%
   );
+  flex-shrink: 0;
+  backdrop-filter: blur(20px);
 }
 
 .format-btn {
@@ -1868,14 +1900,17 @@ defineExpose({
     width: 95vw;
     margin: 20px;
     border-radius: 20px;
+    max-height: 95vh;
   }
 
   .format-dialog-header {
-    padding: 24px 24px 0;
+    padding: 24px 24px 20px;
   }
 
   .format-select-content {
-    padding: 0 24px 24px;
+    padding: 0 24px;
+    max-height: calc(95vh - 180px);
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
   }
 
   .format-select-description {
@@ -1890,6 +1925,7 @@ defineExpose({
   .format-dialog-footer {
     padding: 20px 24px 24px;
     flex-direction: column-reverse;
+    margin-top: auto;
   }
 
   .format-btn {
