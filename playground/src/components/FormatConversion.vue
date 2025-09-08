@@ -68,8 +68,8 @@
                   v-model.number="svgWidth" 
                   type="number" 
                   class="svg-option-input" 
-                  placeholder="Auto" 
-                  min="1" 
+                  placeholder="0 = Auto" 
+                  min="0" 
                   max="4096"
                 />
               </div>
@@ -79,14 +79,14 @@
                   v-model.number="svgHeight" 
                   type="number" 
                   class="svg-option-input" 
-                  placeholder="Auto" 
-                  min="1" 
+                  placeholder="0 = Auto" 
+                  min="0" 
                   max="4096"
                 />
               </div>
             </div>
             <div class="svg-options-hint">
-              Leave empty for original SVG dimensions. Aspect ratio will be preserved.
+              Use 0 for auto-sizing that dimension. Aspect ratio will be preserved.
             </div>
           </div>
         </div>
@@ -630,9 +630,9 @@ const scrollTop = ref(0)
 const appContainer = ref<HTMLElement | null>(null)
 const appElement = ref<HTMLElement | null>(null)
 
-// SVG转换选项
-const svgWidth = ref<number | undefined>(undefined)
-const svgHeight = ref<number | undefined>(undefined)
+// SVG转换选项 - 默认设置为512x512
+const svgWidth = ref<number | undefined>(512)
+const svgHeight = ref<number | undefined>(512)
 
 // 恢复滚动状态的统一函数
 function restoreScrollState() {
@@ -665,9 +665,9 @@ function openFormatSelectDialog(item: {
   targetImageItem.value = item
   targetImageName.value = item.file.name
   
-  // Reset SVG dimensions
-  svgWidth.value = undefined
-  svgHeight.value = undefined
+  // Reset SVG dimensions to default 512x512
+  svgWidth.value = 512
+  svgHeight.value = 512
 
   // 获取app-container元素
   appContainer.value = document.querySelector('.app-container') as HTMLElement
@@ -775,8 +775,8 @@ async function openConversionPanel(item: {
         targetFormat: selectedTargetFormat.value,
         quality: 0.8, // 转换质量设置
         ...(isSvgSource && (svgWidth.value || svgHeight.value) ? {
-          width: svgWidth.value,
-          height: svgHeight.value,
+          width: svgWidth.value === 0 ? undefined : svgWidth.value,
+          height: svgHeight.value === 0 ? undefined : svgHeight.value,
         } : {}),
       },
     })

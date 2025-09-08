@@ -1454,6 +1454,18 @@ async function addNewImages(files: File[]) {
           })
           
           console.log(`✅ SVG processed ${i + 1}/${files.length}: ${file.name}`)
+          
+          // Auto-trigger format conversion dialog for SVG files
+          nextTick(() => {
+            if (formatConversionRef.value) {
+              formatConversionRef.value.openFormatSelectDialog({
+                id: item.id,
+                file: item.file,
+                originalUrl: item.originalUrl,
+                quality: item.quality,
+              })
+            }
+          })
         } else {
           // Regular image files - use compression
           result = await compressEnhanced(file, {
