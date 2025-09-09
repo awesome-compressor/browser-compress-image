@@ -1,4 +1,4 @@
-import type { TargetFormat, ImageConvertOptions } from './types'
+import type { TargetFormat, ImageConvertOptions, SourceFormat } from './types'
 
 // MIME type mapping
 export const MIME_MAP: Record<TargetFormat, string> = {
@@ -172,4 +172,190 @@ export async function encodeIcoFromImage(
       `ICO encoding failed: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
+}
+
+// SVG to canvas renderer
+export async function renderSvgToCanvas(
+  svgContent: string,
+  width?: number,
+  height?: number,
+): Promise<HTMLCanvasElement> {
+  return new Promise((resolve, reject) => {
+    // Create SVG blob and object URL
+    const svgBlob = new Blob([svgContent], { type: 'image/svg+xml' })
+    const url = URL.createObjectURL(svgBlob)
+    
+    const img = new Image()
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+
+    if (!ctx) {
+      reject(new Error('Canvas context not available'))
+      return
+    }
+
+    img.onload = () => {
+      try {
+        // Use provided dimensions or natural dimensions
+        const canvasWidth = width || img.naturalWidth || img.width || 300
+        const canvasHeight = height || img.naturalHeight || img.height || 150
+
+        canvas.width = canvasWidth
+        canvas.height = canvasHeight
+        
+        // Clear canvas with transparent background
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight)
+        
+        // Draw SVG image to canvas
+        ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight)
+        
+        // Clean up
+        URL.revokeObjectURL(url)
+        resolve(canvas)
+      } catch (error) {
+        URL.revokeObjectURL(url)
+        reject(error)
+      }
+    }
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Failed to load SVG image'))
+    }
+
+    img.src = url
+  })
+}
+
+// SVG to target format encoder
+export async function encodeSvgToFormat(
+  svgContent: string,
+  format: TargetFormat,
+  options?: ImageConvertOptions,
+): Promise<Blob> {
+  try {
+    const { quality, width, height } = options || {}
+    
+    // Render SVG to canvas first
+    const canvas = await renderSvgToCanvas(svgContent, width, height)
+    
+    // Convert canvas to target format
+    return new Promise((resolve, reject) => {
+      let mimeType: string
+      let qualityParam: number | undefined
+
+      switch (format) {
+        case 'jpeg':
+          mimeType = 'image/jpeg'
+          qualityParam = quality || 0.8
+          break
+        case 'webp':
+          mimeType = 'image/webp'
+          qualityParam = quality || 0.8
+          break
+        case 'png':
+          mimeType = 'image/png'
+          break
+        case 'ico':
+          // For ICO, we'll convert to PNG first, then use the ICO encoder
+          canvas.toBlob(
+            async (pngBlob) => {
+              if (!pngBlob) {
+                reject(new Error('Canvas toBlob failed for ICO conversion'))
+                return
+              }
+              try {
+                // Create a temporary file for ICO conversion
+                const tempFile = new File([pngBlob], 'temp.png', { type: 'image/png' })
+                const icoBlob = await encodeIcoFromImage(tempFile, options)
+                resolve(icoBlob)
+              } catch (error) {
+                reject(error)
+              }
+            },
+            'image/png'
+          )
+          return
+        default:
+          reject(new Error(`Unsupported target format: ${format}`))
+          return
+      }
+
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve(blob)
+          } else {
+            reject(new Error('Canvas toBlob failed'))
+          }
+        },
+        mimeType,
+        qualityParam,
+      )
+    })
+  } catch (error) {
+    // Use logger if available at runtime (import not desirable in this helper)
+    try {
+      // dynamic import to avoid circular deps in some environments
+      const logger = await import('../utils/logger').then((m) => m.default)
+      logger.error('SVG encoding failed:', error)
+    } catch (e) {
+      /* ignore */
+    }
+    throw new Error(
+      `SVG encoding failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+// Utility function to detect if content is SVG
+export function isSvgContent(content: string): boolean {
+  const trimmed = content.trim()
+  return trimmed.startsWith('<svg') || trimmed.includes('<svg')
+}
+
+// Utility function to detect file format
+export function detectFileFormat(file: File): SourceFormat {
+  const mimeType = file.type.toLowerCase()
+  const fileName = file.name.toLowerCase()
+
+  if (mimeType === 'image/svg+xml' || fileName.endsWith('.svg')) {
+    return 'svg'
+  }
+  if (mimeType === 'image/png' || fileName.endsWith('.png')) {
+    return 'png'
+  }
+  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg' || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+    return 'jpeg'
+  }
+  if (mimeType === 'image/webp' || fileName.endsWith('.webp')) {
+    return 'webp'
+  }
+  if (mimeType === 'image/gif' || fileName.endsWith('.gif')) {
+    return 'gif'
+  }
+  if (mimeType === 'image/bmp' || fileName.endsWith('.bmp')) {
+    return 'bmp'
+  }
+  if (mimeType === 'image/x-icon' || mimeType === 'image/vnd.microsoft.icon' || fileName.endsWith('.ico')) {
+    return 'ico'
+  }
+
+  // Default fallback - try to detect from file name extension
+  if (fileName.includes('.')) {
+    const extension = fileName.split('.').pop()
+    switch (extension) {
+      case 'svg': return 'svg'
+      case 'png': return 'png'
+      case 'jpg':
+      case 'jpeg': return 'jpeg'
+      case 'webp': return 'webp'
+      case 'gif': return 'gif'
+      case 'bmp': return 'bmp'
+      case 'ico': return 'ico'
+    }
+  }
+
+  // If we can't determine the format, assume it's a raster image
+  return 'png'
 }

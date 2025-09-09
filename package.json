@@ -76,14 +76,14 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.19.0",
+    "@size-limit/preset-small-lib": "^11.2.0",
     "@sxzz/prettier-config": "^2.2.3",
     "@types/node": "^17.0.45",
     "bumpp": "^7.2.0",
     "eslint": "^9.33.0",
     "prettier": "^3.6.2",
-    "tsdown": "^0.12.9",
     "size-limit": "^7.0.0",
-    "@size-limit/preset-small-lib": "^6.2.0",
+    "tsdown": "^0.12.9",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },

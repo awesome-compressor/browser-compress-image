@@ -25,7 +25,12 @@
         <!-- 格式选择区域 -->
         <div class="format-select-content">
           <div class="format-select-description">
-            Choose the target format for your image conversion:
+            <template v-if="targetImageItem && (targetImageItem.file.type === 'image/svg+xml' || targetImageItem.file.name.toLowerCase().endsWith('.svg'))">
+              Convert your SVG to a raster format:
+            </template>
+            <template v-else>
+              Choose the target format for your image conversion:
+            </template>
           </div>
 
           <div class="format-options-grid">
@@ -50,6 +55,38 @@
                   >
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- SVG转换选项 -->
+          <div v-if="targetImageItem && (targetImageItem.file.type === 'image/svg+xml' || targetImageItem.file.name.toLowerCase().endsWith('.svg'))" class="svg-conversion-options">
+            <div class="svg-options-title">SVG Conversion Settings</div>
+            <div class="svg-options-grid">
+              <div class="svg-option-group">
+                <label class="svg-option-label">Width (optional)</label>
+                <input 
+                  v-model.number="svgWidth" 
+                  type="number" 
+                  class="svg-option-input" 
+                  placeholder="0 = Auto" 
+                  min="0" 
+                  max="4096"
+                />
+              </div>
+              <div class="svg-option-group">
+                <label class="svg-option-label">Height (optional)</label>
+                <input 
+                  v-model.number="svgHeight" 
+                  type="number" 
+                  class="svg-option-input" 
+                  placeholder="0 = Auto" 
+                  min="0" 
+                  max="4096"
+                />
+              </div>
+            </div>
+            <div class="svg-options-hint">
+              Use 0 for auto-sizing that dimension. Aspect ratio will be preserved.
             </div>
           </div>
         </div>
@@ -593,6 +630,10 @@ const scrollTop = ref(0)
 const appContainer = ref<HTMLElement | null>(null)
 const appElement = ref<HTMLElement | null>(null)
 
+// SVG转换选项 - 默认设置为512x512
+const svgWidth = ref<number | undefined>(512)
+const svgHeight = ref<number | undefined>(512)
+
 // 恢复滚动状态的统一函数
 function restoreScrollState() {
   // 恢复app-container滚动
@@ -623,6 +664,10 @@ function openFormatSelectDialog(item: {
 }) {
   targetImageItem.value = item
   targetImageName.value = item.file.name
+  
+  // Reset SVG dimensions to default 512x512
+  svgWidth.value = 512
+  svgHeight.value = 512
 
   // 获取app-container元素
   appContainer.value = document.querySelector('.app-container') as HTMLElement
@@ -711,11 +756,14 @@ async function openConversionPanel(item: {
     )
 
     // 构建转换对比数据
-    // ICO格式特殊处理：不支持压缩，只进行格式转换
+    // ICO格式和SVG源文件特殊处理：不支持压缩，只进行格式转换
     const isICO = selectedTargetFormat.value === 'ico'
+    const isSvgSource = item.file.type === 'image/svg+xml' || item.file.name.toLowerCase().endsWith('.svg')
+    const skipCompression = isICO || isSvgSource
+    
     const conversionColumn = await buildConversionColumn({
       file: item.file,
-      compressOptions: isICO
+      compressOptions: skipCompression
         ? undefined
         : {
             quality: item.quality,
@@ -726,6 +774,10 @@ async function openConversionPanel(item: {
       convertOptions: {
         targetFormat: selectedTargetFormat.value,
         quality: 0.8, // 转换质量设置
+        ...(isSvgSource && (svgWidth.value || svgHeight.value) ? {
+          width: svgWidth.value === 0 ? undefined : svgWidth.value,
+          height: svgHeight.value === 0 ? undefined : svgHeight.value,
+        } : {}),
       },
     })
 
@@ -749,9 +801,22 @@ async function openConversionPanel(item: {
   sortConversionResultsByCompression()
   } catch (err) {
     console.error('Conversion comparison failed:', err)
-    ElMessage.error(
-      err instanceof Error ? err.message : 'Failed to compare conversions',
-    )
+    
+    // SVG-specific error handling
+    let errorMessage = 'Failed to compare conversions'
+    if (isSvgSource && err instanceof Error) {
+      if (err.message.includes('SVG')) {
+        errorMessage = `SVG conversion failed: ${err.message}`
+      } else if (err.message.includes('width') || err.message.includes('height')) {
+        errorMessage = 'Invalid SVG dimensions. Please check your width and height values.'
+      } else {
+        errorMessage = `SVG conversion failed: ${err.message}`
+      }
+    } else if (err instanceof Error) {
+      errorMessage = err.message
+    }
+    
+    ElMessage.error(errorMessage)
   } finally {
     conversionLoading.value = false
   }
@@ -1215,7 +1280,8 @@ defineExpose({
     0 16px 40px rgba(99, 102, 241, 0.08),
     0 4px 12px rgba(0, 0, 0, 0.05);
   animation: slideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes slideUp {
@@ -1233,9 +1299,11 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 28px 28px 0;
+  padding: 28px 28px 24px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  margin-bottom: 24px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(20px);
 }
 
 .format-dialog-title {
@@ -1440,13 +1508,40 @@ defineExpose({
 }
 
 .format-select-content {
-  padding: 0 28px 28px;
+  padding: 0 28px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  max-height: calc(90vh - 200px);
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Scrollbar styling for the content area */
+.format-select-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.format-select-content::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+.format-select-content::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.2);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.format-select-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.4);
 }
 
 .format-select-description {
   font-size: 15px;
   color: #6b7280;
-  margin-bottom: 28px;
+  margin: 28px 0;
   line-height: 1.6;
   font-weight: 500;
 }
@@ -1633,6 +1728,8 @@ defineExpose({
     transparent 0%,
     rgba(248, 250, 252, 0.5) 100%
   );
+  flex-shrink: 0;
+  backdrop-filter: blur(20px);
 }
 
 .format-btn {
@@ -1724,20 +1821,96 @@ defineExpose({
   transform: scale(1.1);
 }
 
+/* SVG转换选项样式 */
+.svg-conversion-options {
+  margin-top: 24px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.06) 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.svg-options-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #10b981;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.svg-options-title::before {
+  content: '⚙️';
+  font-size: 16px;
+}
+
+.svg-options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.svg-option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.svg-option-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #047857;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.svg-option-input {
+  padding: 8px 12px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.svg-option-input:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.svg-option-input::placeholder {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.svg-options-hint {
+  font-size: 11px;
+  color: #059669;
+  opacity: 0.8;
+  font-style: italic;
+  text-align: center;
+}
+
 /* 响应式设计 */
 @media (max-width: 640px) {
   .format-select-dialog {
     width: 95vw;
     margin: 20px;
     border-radius: 20px;
+    max-height: 95vh;
   }
 
   .format-dialog-header {
-    padding: 24px 24px 0;
+    padding: 24px 24px 20px;
   }
 
   .format-select-content {
-    padding: 0 24px 24px;
+    padding: 0 24px;
+    max-height: calc(95vh - 180px);
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
   }
 
   .format-select-description {
@@ -1752,6 +1925,7 @@ defineExpose({
   .format-dialog-footer {
     padding: 20px 24px 24px;
     flex-direction: column-reverse;
+    margin-top: auto;
   }
 
   .format-btn {
@@ -1784,6 +1958,16 @@ defineExpose({
   .format-check-circle {
     width: 26px;
     height: 26px;
+  }
+
+  .svg-options-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .svg-conversion-options {
+    margin-top: 16px;
+    padding: 16px;
   }
 }
 
