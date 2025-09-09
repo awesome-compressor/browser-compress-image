@@ -184,7 +184,7 @@ export async function renderSvgToCanvas(
     // Create SVG blob and object URL
     const svgBlob = new Blob([svgContent], { type: 'image/svg+xml' })
     const url = URL.createObjectURL(svgBlob)
-    
+
     const img = new Image()
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
@@ -202,13 +202,13 @@ export async function renderSvgToCanvas(
 
         canvas.width = canvasWidth
         canvas.height = canvasHeight
-        
+
         // Clear canvas with transparent background
         ctx.clearRect(0, 0, canvasWidth, canvasHeight)
-        
+
         // Draw SVG image to canvas
         ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight)
-        
+
         // Clean up
         URL.revokeObjectURL(url)
         resolve(canvas)
@@ -235,10 +235,10 @@ export async function encodeSvgToFormat(
 ): Promise<Blob> {
   try {
     const { quality, width, height } = options || {}
-    
+
     // Render SVG to canvas first
     const canvas = await renderSvgToCanvas(svgContent, width, height)
-    
+
     // Convert canvas to target format
     return new Promise((resolve, reject) => {
       let mimeType: string
@@ -258,23 +258,22 @@ export async function encodeSvgToFormat(
           break
         case 'ico':
           // For ICO, we'll convert to PNG first, then use the ICO encoder
-          canvas.toBlob(
-            async (pngBlob) => {
-              if (!pngBlob) {
-                reject(new Error('Canvas toBlob failed for ICO conversion'))
-                return
-              }
-              try {
-                // Create a temporary file for ICO conversion
-                const tempFile = new File([pngBlob], 'temp.png', { type: 'image/png' })
-                const icoBlob = await encodeIcoFromImage(tempFile, options)
-                resolve(icoBlob)
-              } catch (error) {
-                reject(error)
-              }
-            },
-            'image/png'
-          )
+          canvas.toBlob(async (pngBlob) => {
+            if (!pngBlob) {
+              reject(new Error('Canvas toBlob failed for ICO conversion'))
+              return
+            }
+            try {
+              // Create a temporary file for ICO conversion
+              const tempFile = new File([pngBlob], 'temp.png', {
+                type: 'image/png',
+              })
+              const icoBlob = await encodeIcoFromImage(tempFile, options)
+              resolve(icoBlob)
+            } catch (error) {
+              reject(error)
+            }
+          }, 'image/png')
           return
         default:
           reject(new Error(`Unsupported target format: ${format}`))
@@ -325,7 +324,12 @@ export function detectFileFormat(file: File): SourceFormat {
   if (mimeType === 'image/png' || fileName.endsWith('.png')) {
     return 'png'
   }
-  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg' || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+  if (
+    mimeType === 'image/jpeg' ||
+    mimeType === 'image/jpg' ||
+    fileName.endsWith('.jpg') ||
+    fileName.endsWith('.jpeg')
+  ) {
     return 'jpeg'
   }
   if (mimeType === 'image/webp' || fileName.endsWith('.webp')) {
@@ -337,7 +341,11 @@ export function detectFileFormat(file: File): SourceFormat {
   if (mimeType === 'image/bmp' || fileName.endsWith('.bmp')) {
     return 'bmp'
   }
-  if (mimeType === 'image/x-icon' || mimeType === 'image/vnd.microsoft.icon' || fileName.endsWith('.ico')) {
+  if (
+    mimeType === 'image/x-icon' ||
+    mimeType === 'image/vnd.microsoft.icon' ||
+    fileName.endsWith('.ico')
+  ) {
     return 'ico'
   }
 
@@ -345,14 +353,21 @@ export function detectFileFormat(file: File): SourceFormat {
   if (fileName.includes('.')) {
     const extension = fileName.split('.').pop()
     switch (extension) {
-      case 'svg': return 'svg'
-      case 'png': return 'png'
+      case 'svg':
+        return 'svg'
+      case 'png':
+        return 'png'
       case 'jpg':
-      case 'jpeg': return 'jpeg'
-      case 'webp': return 'webp'
-      case 'gif': return 'gif'
-      case 'bmp': return 'bmp'
-      case 'ico': return 'ico'
+      case 'jpeg':
+        return 'jpeg'
+      case 'webp':
+        return 'webp'
+      case 'gif':
+        return 'gif'
+      case 'bmp':
+        return 'bmp'
+      case 'ico':
+        return 'ico'
     }
   }
 

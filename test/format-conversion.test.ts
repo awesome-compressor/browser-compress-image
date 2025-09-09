@@ -54,12 +54,16 @@ global.HTMLCanvasElement = class MockCanvas {
     return null
   }
 
-  toBlob(callback: (blob: Blob | null) => void, type?: string, quality?: number) {
+  toBlob(
+    callback: (blob: Blob | null) => void,
+    type?: string,
+    quality?: number,
+  ) {
     // Create a simple mock blob based on type
     let mimeType = 'image/png'
     if (type === 'image/jpeg') mimeType = 'image/jpeg'
     else if (type === 'image/webp') mimeType = 'image/webp'
-    
+
     const mockBlob = new Blob(['mock-image-data'], { type: mimeType })
     // Use microtask for immediate callback
     queueMicrotask(() => callback(mockBlob))
@@ -106,7 +110,9 @@ describe('SVG format detection', () => {
     const jpegFile = new File(['fake-jpeg'], 'test.jpg', { type: 'image/jpeg' })
     expect(detectFileFormat(jpegFile)).toBe('jpeg')
 
-    const webpFile = new File(['fake-webp'], 'test.webp', { type: 'image/webp' })
+    const webpFile = new File(['fake-webp'], 'test.webp', {
+      type: 'image/webp',
+    })
     expect(detectFileFormat(webpFile)).toBe('webp')
   })
 })
@@ -154,9 +160,9 @@ describe('SVG to format encoding', () => {
   })
 
   it('should convert SVG to JPEG with quality', async () => {
-    const blob = await encodeSvgToFormat(testSvg, 'jpeg', { 
+    const blob = await encodeSvgToFormat(testSvg, 'jpeg', {
       targetFormat: 'jpeg',
-      quality: 0.9 
+      quality: 0.9,
     })
     expect(blob).toBeInstanceOf(Blob)
     expect(blob.type).toBe('image/jpeg')
@@ -175,10 +181,10 @@ describe('SVG to format encoding', () => {
   })
 
   it('should handle custom dimensions in conversion', async () => {
-    const blob = await encodeSvgToFormat(testSvg, 'png', { 
+    const blob = await encodeSvgToFormat(testSvg, 'png', {
       targetFormat: 'png',
-      width: 500, 
-      height: 400 
+      width: 500,
+      height: 400,
     })
     expect(blob).toBeInstanceOf(Blob)
     expect(blob.type).toBe('image/png')
@@ -188,9 +194,9 @@ describe('SVG to format encoding', () => {
 describe('Full SVG conversion workflow', () => {
   it('should convert SVG file to PNG through convertImage function', async () => {
     const svgFile = new File([testSvg], 'test.svg', { type: 'image/svg+xml' })
-    
+
     const result = await convertImage(svgFile, { targetFormat: 'png' })
-    
+
     expect(result.blob).toBeInstanceOf(Blob)
     expect(result.mime).toBe('image/png')
     expect(result.duration).toBeGreaterThan(0)
@@ -198,12 +204,12 @@ describe('Full SVG conversion workflow', () => {
 
   it('should convert SVG file to JPEG with quality settings', async () => {
     const svgFile = new File([testSvg], 'test.svg', { type: 'image/svg+xml' })
-    
-    const result = await convertImage(svgFile, { 
+
+    const result = await convertImage(svgFile, {
       targetFormat: 'jpeg',
-      quality: 0.8
+      quality: 0.8,
     })
-    
+
     expect(result.blob).toBeInstanceOf(Blob)
     expect(result.mime).toBe('image/jpeg')
     expect(result.duration).toBeGreaterThan(0)
@@ -211,9 +217,9 @@ describe('Full SVG conversion workflow', () => {
 
   it('should convert SVG file to WebP', async () => {
     const svgFile = new File([testSvg], 'test.svg', { type: 'image/svg+xml' })
-    
+
     const result = await convertImage(svgFile, { targetFormat: 'webp' })
-    
+
     expect(result.blob).toBeInstanceOf(Blob)
     expect(result.mime).toBe('image/webp')
     expect(result.duration).toBeGreaterThan(0)
@@ -221,13 +227,13 @@ describe('Full SVG conversion workflow', () => {
 
   it('should handle SVG with custom render dimensions', async () => {
     const svgFile = new File([testSvg], 'test.svg', { type: 'image/svg+xml' })
-    
-    const result = await convertImage(svgFile, { 
+
+    const result = await convertImage(svgFile, {
       targetFormat: 'png',
       width: 800,
-      height: 600
+      height: 600,
     })
-    
+
     expect(result.blob).toBeInstanceOf(Blob)
     expect(result.mime).toBe('image/png')
     expect(result.duration).toBeGreaterThan(0)
@@ -236,19 +242,19 @@ describe('Full SVG conversion workflow', () => {
 
 describe('Error handling', () => {
   it('should handle invalid SVG content gracefully', async () => {
-    const invalidSvgFile = new File(['not svg content'], 'test.svg', { 
-      type: 'image/svg+xml' 
+    const invalidSvgFile = new File(['not svg content'], 'test.svg', {
+      type: 'image/svg+xml',
     })
-    
-    await expect(convertImage(invalidSvgFile, { targetFormat: 'png' }))
-      .rejects
-      .toThrow(/SVG conversion failed/)
+
+    await expect(
+      convertImage(invalidSvgFile, { targetFormat: 'png' }),
+    ).rejects.toThrow(/SVG conversion failed/)
   })
 
   it('should handle unsupported target formats', async () => {
-    await expect(encodeSvgToFormat(testSvg, 'gif' as any))
-      .rejects
-      .toThrow(/Unsupported target format/)
+    await expect(encodeSvgToFormat(testSvg, 'gif' as any)).rejects.toThrow(
+      /Unsupported target format/,
+    )
   })
 })
 

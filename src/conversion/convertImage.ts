@@ -24,10 +24,12 @@ export async function convertImage(
         : new File([fileOrBlob], 'image', { type: fileOrBlob.type })
 
     const { targetFormat, quality } = options
-    
+
     // Detect source format
     const sourceFormat = detectFileFormat(file)
-    logger.debug(`Detected source format: ${sourceFormat}, target format: ${targetFormat}`)
+    logger.debug(
+      `Detected source format: ${sourceFormat}, target format: ${targetFormat}`,
+    )
 
     let blob: Blob
 
@@ -36,17 +38,21 @@ export async function convertImage(
       try {
         // Read SVG content as text
         const svgContent = await file.text()
-        
+
         // Validate SVG content
         if (!isSvgContent(svgContent)) {
-          throw new Error('File detected as SVG but does not contain valid SVG content')
+          throw new Error(
+            'File detected as SVG but does not contain valid SVG content',
+          )
         }
-        
+
         // Convert SVG to target format
         blob = await encodeSvgToFormat(svgContent, targetFormat, options)
       } catch (svgError) {
         logger.error('SVG conversion failed:', svgError)
-        throw new Error(`SVG conversion failed: ${svgError instanceof Error ? svgError.message : String(svgError)}`)
+        throw new Error(
+          `SVG conversion failed: ${svgError instanceof Error ? svgError.message : String(svgError)}`,
+        )
       }
     } else {
       // Handle regular raster image conversion

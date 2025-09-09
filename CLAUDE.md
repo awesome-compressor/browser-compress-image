@@ -5,29 +5,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 **Package Management:**
+
 - `pnpm install` - Install dependencies
 - `pnpm add <package>` - Add new dependency
 
 **Build & Type Checking:**
+
 - `pnpm build` - Build the library using tsdown
 - `pnpm typecheck` - Run TypeScript type checking
 - `pnpm size` - Check bundle size with size-limit
 
 **Testing:**
+
 - `pnpm test` - Run all tests with Vitest
 - `pnpm test:ci` - Run tests for CI environment
 - `pnpm ptest` - Run playground tests
 - `pnpm test:e2e` - Run Cypress end-to-end tests
 
 **Linting & Formatting:**
+
 - `pnpm lint` - Format code with Prettier
 
 **Playground Development:**
+
 - `pnpm dev` / `pnpm play` - Start playground dev server
 - `pnpm play:build` - Build playground
 - `pnpm preview` - Preview built playground
 
 **Release Management:**
+
 - `pnpm release` - Bump version, tag, and publish
 - `pnpm prepublishOnly` - Pre-publish build
 
@@ -36,12 +42,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Core Components
 
 **Main Entry Points:**
+
 - `src/index.ts` - Primary exports and public API
 - `src/compress.ts` - Legacy compression functions (backward compatibility)
 - `src/compressEnhanced.ts` - Enhanced compression with queue and worker support
 - `src/compressWithTools.ts` - Configurable tool-based compression system
 
 **Compression Tools:**
+
 - `src/tools/` - Individual compression implementations:
   - `compressWithJsquash.ts` - WASM-based compression (AVIF, JPEG XL, WebP)
   - `compressWithTinyPng.ts` - TinyPNG online service integration
@@ -51,6 +59,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `compressWithGifsicle.ts` - GIF optimization with WASM
 
 **Utility Modules:**
+
 - `src/utils/compressionQueue.ts` - Task queue management
 - `src/utils/compressionWorker.ts` - WebWorker management
 - `src/utils/memoryManager.ts` - Memory usage monitoring
@@ -61,6 +70,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `src/utils/imageQuality.ts` - Image quality assessment
 
 **Type Definitions:**
+
 - `src/types.ts` - Core TypeScript interfaces and types
 - `src/conversion/` - Format conversion utilities
 

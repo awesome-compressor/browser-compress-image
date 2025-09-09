@@ -1376,7 +1376,7 @@ async function addNewImages(files: File[]) {
   const newItems: ImageItem[] = files.map((file) => {
     const sourceFormat = detectFileFormat(file)
     const isSvg = sourceFormat === 'svg'
-    
+
     return {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       file,
@@ -1440,11 +1440,11 @@ async function addNewImages(files: File[]) {
         if (item.isSvg) {
           // SVG files skip compression and are ready for conversion
           console.log(`📄 SVG detected: ${file.name}, skipping compression`)
-          
+
           // For SVG, we just use the original file as the "compressed" result
           // This allows the user to see the SVG and access format conversion
           result = file
-          
+
           // Mark as successfully processed
           updateImageItem(item, {
             compressedUrl: item.originalUrl, // Use original URL since no compression needed
@@ -1452,9 +1452,9 @@ async function addNewImages(files: File[]) {
             compressionRatio: 0, // No compression for SVG
             isCompressing: false,
           })
-          
+
           console.log(`✅ SVG processed ${i + 1}/${files.length}: ${file.name}`)
-          
+
           // Auto-trigger format conversion dialog for SVG files
           nextTick(() => {
             if (formatConversionRef.value) {
@@ -1563,14 +1563,14 @@ async function compressImage(item: ImageItem): Promise<void> {
     if (item.isSvg) {
       // SVG files don't need compression, just mark as processed
       console.log(`📄 SVG reprocessing skipped: ${item.file.name}`)
-      
+
       // Keep the original as the "compressed" version
       updateImageItem(item, {
         compressedUrl: item.originalUrl,
         compressedSize: item.originalSize,
         compressionRatio: 0, // No compression for SVG
       })
-      
+
       // 强制触发响应式更新
       triggerRef(imageItems)
       return
@@ -2274,8 +2274,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
           </el-icon>
           <span class="upload-text">Drop, Paste or Click to Upload Images</span>
           <span class="upload-hint">
-            Support PNG, JPG, JPEG, GIF, WebP, SVG formats • Multiple files & folders
-            supported • Use Ctrl+V to paste images
+            Support PNG, JPG, JPEG, GIF, WebP, SVG formats • Multiple files &
+            folders supported • Use Ctrl+V to paste images
           </span>
         </button>
       </section>
@@ -2485,7 +2485,11 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   {{ item.file.name }}
                 </div>
                 <div class="image-format" :class="{ 'svg-format': item.isSvg }">
-                  {{ item.isSvg ? 'SVG' : item.file.type.split('/')[1].toUpperCase() }}
+                  {{
+                    item.isSvg
+                      ? 'SVG'
+                      : item.file.type.split('/')[1].toUpperCase()
+                  }}
                 </div>
               </div>
 
@@ -2494,7 +2498,9 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 <div v-if="item.isSvg" class="svg-info">
                   <div class="svg-size-info">
                     <span class="size-label">SVG File Size</span>
-                    <span class="size-value">{{ formatFileSize(item.originalSize) }}</span>
+                    <span class="size-value">{{
+                      formatFileSize(item.originalSize)
+                    }}</span>
                   </div>
                   <div class="svg-conversion-hint">
                     Ready for format conversion

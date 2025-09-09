@@ -25,7 +25,13 @@
         <!-- 格式选择区域 -->
         <div class="format-select-content">
           <div class="format-select-description">
-            <template v-if="targetImageItem && (targetImageItem.file.type === 'image/svg+xml' || targetImageItem.file.name.toLowerCase().endsWith('.svg'))">
+            <template
+              v-if="
+                targetImageItem &&
+                (targetImageItem.file.type === 'image/svg+xml' ||
+                  targetImageItem.file.name.toLowerCase().endsWith('.svg'))
+              "
+            >
               Convert your SVG to a raster format:
             </template>
             <template v-else>
@@ -59,34 +65,42 @@
           </div>
 
           <!-- SVG转换选项 -->
-          <div v-if="targetImageItem && (targetImageItem.file.type === 'image/svg+xml' || targetImageItem.file.name.toLowerCase().endsWith('.svg'))" class="svg-conversion-options">
+          <div
+            v-if="
+              targetImageItem &&
+              (targetImageItem.file.type === 'image/svg+xml' ||
+                targetImageItem.file.name.toLowerCase().endsWith('.svg'))
+            "
+            class="svg-conversion-options"
+          >
             <div class="svg-options-title">SVG Conversion Settings</div>
             <div class="svg-options-grid">
               <div class="svg-option-group">
                 <label class="svg-option-label">Width (optional)</label>
-                <input 
-                  v-model.number="svgWidth" 
-                  type="number" 
-                  class="svg-option-input" 
-                  placeholder="0 = Auto" 
-                  min="0" 
+                <input
+                  v-model.number="svgWidth"
+                  type="number"
+                  class="svg-option-input"
+                  placeholder="0 = Auto"
+                  min="0"
                   max="4096"
                 />
               </div>
               <div class="svg-option-group">
                 <label class="svg-option-label">Height (optional)</label>
-                <input 
-                  v-model.number="svgHeight" 
-                  type="number" 
-                  class="svg-option-input" 
-                  placeholder="0 = Auto" 
-                  min="0" 
+                <input
+                  v-model.number="svgHeight"
+                  type="number"
+                  class="svg-option-input"
+                  placeholder="0 = Auto"
+                  min="0"
                   max="4096"
                 />
               </div>
             </div>
             <div class="svg-options-hint">
-              Use 0 for auto-sizing that dimension. Aspect ratio will be preserved.
+              Use 0 for auto-sizing that dimension. Aspect ratio will be
+              preserved.
             </div>
           </div>
         </div>
@@ -114,7 +128,7 @@
       v-if="popupFullscreen.visible"
       class="popup-fullscreen-overlay"
       :style="{
-        top: scrollTop + 'px'
+        top: scrollTop + 'px',
       }"
       @click="closeFullscreenModal"
     >
@@ -221,11 +235,11 @@
                 v-for="(r, idx) in conversionResults"
                 :key="`${r.meta.flow}-${r.meta.tool || 'direct'}`"
                 class="conversion-item"
-                  :class="{
-                    success: r.success,
-                    fail: !r.success,
-                    best: r.isBest,
-                  }"
+                :class="{
+                  success: r.success,
+                  fail: !r.success,
+                  best: r.isBest,
+                }"
               >
                 <div class="conversion-header">
                   <div class="flow-label">
@@ -245,7 +259,9 @@
                       r.meta.tool
                     }}</span>
                     <!-- 最佳压缩率标识 -->
-                    <span v-if="r.isBest" class="best-compression-badge">最佳压缩</span>
+                    <span v-if="r.isBest" class="best-compression-badge"
+                      >最佳压缩</span
+                    >
                   </div>
                   <div v-if="r.success" class="conversion-metrics">
                     <span class="metric size">{{
@@ -664,7 +680,7 @@ function openFormatSelectDialog(item: {
 }) {
   targetImageItem.value = item
   targetImageName.value = item.file.name
-  
+
   // Reset SVG dimensions to default 512x512
   svgWidth.value = 512
   svgHeight.value = 512
@@ -758,9 +774,11 @@ async function openConversionPanel(item: {
     // 构建转换对比数据
     // ICO格式和SVG源文件特殊处理：不支持压缩，只进行格式转换
     const isICO = selectedTargetFormat.value === 'ico'
-    const isSvgSource = item.file.type === 'image/svg+xml' || item.file.name.toLowerCase().endsWith('.svg')
+    const isSvgSource =
+      item.file.type === 'image/svg+xml' ||
+      item.file.name.toLowerCase().endsWith('.svg')
     const skipCompression = isICO || isSvgSource
-    
+
     const conversionColumn = await buildConversionColumn({
       file: item.file,
       compressOptions: skipCompression
@@ -774,10 +792,12 @@ async function openConversionPanel(item: {
       convertOptions: {
         targetFormat: selectedTargetFormat.value,
         quality: 0.8, // 转换质量设置
-        ...(isSvgSource && (svgWidth.value || svgHeight.value) ? {
-          width: svgWidth.value === 0 ? undefined : svgWidth.value,
-          height: svgHeight.value === 0 ? undefined : svgHeight.value,
-        } : {}),
+        ...(isSvgSource && (svgWidth.value || svgHeight.value)
+          ? {
+              width: svgWidth.value === 0 ? undefined : svgWidth.value,
+              height: svgHeight.value === 0 ? undefined : svgHeight.value,
+            }
+          : {}),
       },
     })
 
@@ -796,26 +816,30 @@ async function openConversionPanel(item: {
         }
       },
     )
-  // 计算压缩率并标记最佳，然后按压缩率排序（降序）
-  markBestCompression(item.file.size)
-  sortConversionResultsByCompression()
+    // 计算压缩率并标记最佳，然后按压缩率排序（降序）
+    markBestCompression(item.file.size)
+    sortConversionResultsByCompression()
   } catch (err) {
     console.error('Conversion comparison failed:', err)
-    
+
     // SVG-specific error handling
     let errorMessage = 'Failed to compare conversions'
     if (isSvgSource && err instanceof Error) {
       if (err.message.includes('SVG')) {
         errorMessage = `SVG conversion failed: ${err.message}`
-      } else if (err.message.includes('width') || err.message.includes('height')) {
-        errorMessage = 'Invalid SVG dimensions. Please check your width and height values.'
+      } else if (
+        err.message.includes('width') ||
+        err.message.includes('height')
+      ) {
+        errorMessage =
+          'Invalid SVG dimensions. Please check your width and height values.'
       } else {
         errorMessage = `SVG conversion failed: ${err.message}`
       }
     } else if (err instanceof Error) {
       errorMessage = err.message
     }
-    
+
     ElMessage.error(errorMessage)
   } finally {
     conversionLoading.value = false
@@ -843,7 +867,9 @@ function markBestCompression(originalSize: number) {
   if (!valid.length) return
   let best = valid[0]
   for (const v of valid) {
-    if ((v.compressionRatio ?? -Infinity) > (best.compressionRatio ?? -Infinity)) {
+    if (
+      (v.compressionRatio ?? -Infinity) > (best.compressionRatio ?? -Infinity)
+    ) {
       best = v
     }
   }
@@ -853,14 +879,14 @@ function markBestCompression(originalSize: number) {
 // 按 compressionRatio 从大到小排序，缺失 compressionRatio 的项排在后面
 function sortConversionResultsByCompression() {
   if (!conversionResults.value.length) return
-  conversionResults.value = conversionResults.value
-    .slice()
-    .sort((a, b) => {
-      const ra = typeof a.compressionRatio === 'number' ? a.compressionRatio : -Infinity
-      const rb = typeof b.compressionRatio === 'number' ? b.compressionRatio : -Infinity
-      // 降序
-      return rb - ra
-    })
+  conversionResults.value = conversionResults.value.slice().sort((a, b) => {
+    const ra =
+      typeof a.compressionRatio === 'number' ? a.compressionRatio : -Infinity
+    const rb =
+      typeof b.compressionRatio === 'number' ? b.compressionRatio : -Infinity
+    // 降序
+    return rb - ra
+  })
 }
 
 function closeConversionPanel() {
@@ -1746,7 +1772,6 @@ defineExpose({
   position: relative;
   backdrop-filter: blur(10px);
   min-width: 120px;
-
 }
 
 /* 最佳压缩标识样式 */
@@ -1765,14 +1790,20 @@ defineExpose({
 }
 
 @keyframes pulseBest {
-  0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.28); }
-  70% { box-shadow: 0 0 0 8px rgba(16,185,129,0); }
-  100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.28); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.28);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.28);
+  }
 }
 
 .conversion-item.best {
   border-color: #10b981 !important;
-  box-shadow: 0 6px 20px rgba(16,185,129,0.08);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.08);
 }
 
 .format-btn-secondary {
@@ -1825,7 +1856,11 @@ defineExpose({
 .svg-conversion-options {
   margin-top: 24px;
   padding: 20px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.06) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(16, 185, 129, 0.08) 0%,
+    rgba(5, 150, 105, 0.06) 100%
+  );
   border-radius: 16px;
   border: 1px solid rgba(16, 185, 129, 0.2);
 }

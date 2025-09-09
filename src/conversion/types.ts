@@ -1,5 +1,12 @@
 export type TargetFormat = 'png' | 'jpeg' | 'webp' | 'ico'
-export type SourceFormat = 'png' | 'jpeg' | 'webp' | 'ico' | 'svg' | 'gif' | 'bmp'
+export type SourceFormat =
+  | 'png'
+  | 'jpeg'
+  | 'webp'
+  | 'ico'
+  | 'svg'
+  | 'gif'
+  | 'bmp'
 
 export interface ImageConvertOptions {
   targetFormat: TargetFormat

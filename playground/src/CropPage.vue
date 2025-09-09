@@ -425,14 +425,14 @@ onMounted(() => {
 
   // 设置弹窗位置，让它显示在视口中心
   const cropPage = document.querySelector('.crop-page') as HTMLElement
-    if (cropPage) {
-      // Position the popup at the current page scrollTop so it aligns with
-      // the viewport at the moment of opening. Use the previously saved
-      // scroll position (savedScrollY) which reflects window.scrollY.
-      cropPage.style.top = `${savedScrollY.value}px`
+  if (cropPage) {
+    // Position the popup at the current page scrollTop so it aligns with
+    // the viewport at the moment of opening. Use the previously saved
+    // scroll position (savedScrollY) which reflects window.scrollY.
+    cropPage.style.top = `${savedScrollY.value}px`
 
-      cropPage.style.height = '100vh'
-    }
+    cropPage.style.height = '100vh'
+  }
 
   initCroppers()
   window.addEventListener('wheel', preventWheel, { passive: false })

@@ -53,7 +53,8 @@ export async function buildConversionColumn(
   const items: ConversionCompareItem[] = []
 
   try {
-    const promises: Promise<ConversionCompareItem | ConversionCompareItem[]>[] = []
+    const promises: Promise<ConversionCompareItem | ConversionCompareItem[]>[] =
+      []
 
     // C→T: Compress then convert (only if compressOptions provided)
     if (compressOptions) {
@@ -101,98 +102,40 @@ export async function buildConversionColumn(
                   duration: result.duration,
                 } as ConversionCompareItem
               }
-            })
+            }),
         )
       })()
-      
+
       promises.push(cToTPromise)
     }
 
     // T: Convert original file only
-    promises.push((async () => {
-      const startTime = performance.now()
-
-      try {
-        const convertResult = await convertImage(file, convertOptions)
-        const duration = performance.now() - startTime
-
-        return {
-          meta: {
-            flow: 'T' as const,
-            convertOptions,
-          },
-          blob: convertResult.blob,
-          success: true,
-          size: convertResult.blob.size,
-          compressionRatio:
-            ((file.size - convertResult.blob.size) / file.size) * 100,
-          duration,
-        } as ConversionCompareItem
-      } catch (error) {
-        const duration = performance.now() - startTime
-
-        return {
-          meta: {
-            flow: 'T' as const,
-            convertOptions,
-          },
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-          duration,
-        } as ConversionCompareItem
-      }
-    })())
-
-    // T→C: Convert then compress (only if compressOptions provided)
-    if (compressOptions) {
-      promises.push((async () => {
+    promises.push(
+      (async () => {
         const startTime = performance.now()
 
         try {
-          // First convert
           const convertResult = await convertImage(file, convertOptions)
-
-          // Then compress with tools suitable for target format
-          const convertedFile = new File([convertResult.blob], file.name, {
-            type: convertResult.mime,
-          })
-
-          const compressResultsAfterConvert = await compress(convertedFile, {
-            ...compressOptions,
-            returnAllResults: true,
-            type: 'blob' as CompressResultType,
-          })
-
-          const bestResult = compressResultsAfterConvert.allResults
-            .filter((result) => result.success)
-            .reduce(
-              (best, current) =>
-                current.compressedSize < best.compressedSize ? current : best,
-              compressResultsAfterConvert.allResults[0],
-            )
-
-          const totalDuration = performance.now() - startTime
+          const duration = performance.now() - startTime
 
           return {
             meta: {
-              flow: 'T→C' as const,
-              tool: bestResult.tool,
-              compressOptions,
+              flow: 'T' as const,
               convertOptions,
             },
-            blob: bestResult.result as Blob,
+            blob: convertResult.blob,
             success: true,
-            size: bestResult.compressedSize,
+            size: convertResult.blob.size,
             compressionRatio:
-              ((file.size - bestResult.compressedSize) / file.size) * 100,
-            duration: totalDuration,
+              ((file.size - convertResult.blob.size) / file.size) * 100,
+            duration,
           } as ConversionCompareItem
         } catch (error) {
           const duration = performance.now() - startTime
 
           return {
             meta: {
-              flow: 'T→C' as const,
+              flow: 'T' as const,
               convertOptions,
             },
             success: false,
@@ -200,12 +143,74 @@ export async function buildConversionColumn(
             duration,
           } as ConversionCompareItem
         }
-      })())
+      })(),
+    )
+
+    // T→C: Convert then compress (only if compressOptions provided)
+    if (compressOptions) {
+      promises.push(
+        (async () => {
+          const startTime = performance.now()
+
+          try {
+            // First convert
+            const convertResult = await convertImage(file, convertOptions)
+
+            // Then compress with tools suitable for target format
+            const convertedFile = new File([convertResult.blob], file.name, {
+              type: convertResult.mime,
+            })
+
+            const compressResultsAfterConvert = await compress(convertedFile, {
+              ...compressOptions,
+              returnAllResults: true,
+              type: 'blob' as CompressResultType,
+            })
+
+            const bestResult = compressResultsAfterConvert.allResults
+              .filter((result) => result.success)
+              .reduce(
+                (best, current) =>
+                  current.compressedSize < best.compressedSize ? current : best,
+                compressResultsAfterConvert.allResults[0],
+              )
+
+            const totalDuration = performance.now() - startTime
+
+            return {
+              meta: {
+                flow: 'T→C' as const,
+                tool: bestResult.tool,
+                compressOptions,
+                convertOptions,
+              },
+              blob: bestResult.result as Blob,
+              success: true,
+              size: bestResult.compressedSize,
+              compressionRatio:
+                ((file.size - bestResult.compressedSize) / file.size) * 100,
+              duration: totalDuration,
+            } as ConversionCompareItem
+          } catch (error) {
+            const duration = performance.now() - startTime
+
+            return {
+              meta: {
+                flow: 'T→C' as const,
+                convertOptions,
+              },
+              success: false,
+              error: error instanceof Error ? error.message : String(error),
+              duration,
+            } as ConversionCompareItem
+          }
+        })(),
+      )
     }
 
     // Wait for all flows to complete
     const results = await Promise.all(promises)
-    
+
     // Flatten results (some might be arrays from C→T flow)
     for (const result of results) {
       if (Array.isArray(result)) {
