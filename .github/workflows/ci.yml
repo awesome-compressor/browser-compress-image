@@ -23,6 +23,11 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'pnpm'
 
+      - name: Enable Corepack (pnpm)
+        run: |
+          corepack enable
+          corepack prepare pnpm@10 --activate
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
         with:
