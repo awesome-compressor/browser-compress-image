@@ -765,6 +765,10 @@ async function openConversionPanel(item: {
   // 清理旧的对象URL
   cleanupConversionObjectUrls()
 
+  // pre-declare flags so they are available in catch for nicer error messages
+  let isICO = false
+  let isSvgSource = false
+
   try {
     // 过滤出启用的工具配置
     const enabledToolConfigs = props.toolConfigs.filter(
@@ -773,8 +777,8 @@ async function openConversionPanel(item: {
 
     // 构建转换对比数据
     // ICO格式和SVG源文件特殊处理：不支持压缩，只进行格式转换
-    const isICO = selectedTargetFormat.value === 'ico'
-    const isSvgSource =
+    isICO = selectedTargetFormat.value === 'ico'
+    isSvgSource =
       item.file.type === 'image/svg+xml' ||
       item.file.name.toLowerCase().endsWith('.svg')
     const skipCompression = isICO || isSvgSource
@@ -1465,12 +1469,18 @@ defineExpose({
 }
 /* Ensure images inside popup are centered and contained */
 .popup-comparison-slider img,
-.popup-comparison-slider .comparison-image {
+.popup-comparison-slider .comparison-image,
+.popup-comparison-slider img {
+  /* Ensure both first/second images occupy identical boxes inside the slider
+     Use absolute positioning so img-comparison-slider's internal layout places
+     both images on top of each other with same size even if natural sizes differ */
+  position: absolute;
+  inset: 0; /* top:0; right:0; bottom:0; left:0 */
   display: block;
-  max-width: 100%;
-  max-height: 100%;
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
+  margin: 0;
 }
 
 .format-title-main {
@@ -2447,6 +2457,11 @@ defineExpose({
 }
 
 .conversion-comparison-slider .comparison-image {
+  /* Force images to share the same positioning and sizing inside the slider
+     This prevents blob:image (SVG rasterized) from rendering at native pixel
+     size and misaligning against the original. */
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 300px;
   object-fit: contain;

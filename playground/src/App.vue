@@ -2505,6 +2505,14 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   <div class="svg-conversion-hint">
                     Ready for format conversion
                   </div>
+                  
+                  <!-- Additional SVG information to fill space -->
+                  <div class="svg-description">
+                    <div class="svg-feature">
+                      <span class="feature-icon"></span>
+                      <span class="feature-text">Quality control not supported</span>
+                    </div>
+                  </div>
                 </div>
                 <!-- Regular images show compression results -->
                 <div v-else class="compression-result">
@@ -5002,6 +5010,8 @@ img-comparison-slider img,
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   flex: 0 0 180px;
   width: 180px;
+  display: flex;
+  flex-direction: column;
 }
 
 .image-card:hover {
@@ -5085,6 +5095,7 @@ img-comparison-slider img,
   display: flex;
   flex-direction: column;
   gap: 10px;
+  height: 160px;
 }
 
 /* 图片头部信息 */
@@ -5167,6 +5178,34 @@ img-comparison-slider img,
   text-align: center;
   font-style: italic;
   opacity: 0.8;
+}
+
+/* SVG description area to fill blank space */
+.svg-description {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.svg-feature {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.3;
+}
+
+.svg-feature .feature-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.svg-feature .feature-text {
+  flex: 1;
+  font-weight: 500;
 }
 
 .compression-result {
