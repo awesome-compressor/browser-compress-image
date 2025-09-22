@@ -121,9 +121,24 @@ function initCroppers() {
           initialCanvasData = originalCropper.value!.getCanvasData()
           // Ensure compressed canvas matches dimensions BEFORE default crop
           if (compressedCropper.value) {
-            compressedCropper.value.setCanvasData(initialCanvasData)
+            try {
+              compressedCropper.value.setCanvasData(initialCanvasData)
+            } catch (e) {
+              // The other cropper may not be fully initialized yet; log and continue
+              console.warn(
+                'compressed cropper not ready to accept canvas data',
+                e,
+              )
+            }
           }
-          setDefaultCrop()
+          try {
+            setDefaultCrop()
+          } catch (e) {
+            console.warn(
+              'setDefaultCrop failed (will retry later if needed)',
+              e,
+            )
+          }
         }
         if (originalImgRef.value) {
           originalDims.value = {
@@ -147,9 +162,23 @@ function initCroppers() {
         if (!initialCanvasData) {
           initialCanvasData = compressedCropper.value!.getCanvasData()
           if (originalCropper.value) {
-            originalCropper.value.setCanvasData(initialCanvasData)
+            try {
+              originalCropper.value.setCanvasData(initialCanvasData)
+            } catch (e) {
+              console.warn(
+                'original cropper not ready to accept canvas data',
+                e,
+              )
+            }
           }
-          setDefaultCrop()
+          try {
+            setDefaultCrop()
+          } catch (e) {
+            console.warn(
+              'setDefaultCrop failed (will retry later if needed)',
+              e,
+            )
+          }
         }
         if (compressedImgRef.value) {
           compressedDims.value = {
@@ -223,9 +252,17 @@ function updateCropDimensions(cropper: Cropper) {
 }
 
 function applyAspectRatio() {
-  const ratio = aspectRatio.value ?? NaN
-  originalCropper.value?.setAspectRatio(ratio)
-  compressedCropper.value?.setAspectRatio(ratio)
+  const ratio = typeof aspectRatio.value === 'number' ? aspectRatio.value : NaN
+  try {
+    originalCropper.value?.setAspectRatio(ratio)
+  } catch (e) {
+    console.warn('originalCropper.setAspectRatio failed', e)
+  }
+  try {
+    compressedCropper.value?.setAspectRatio(ratio)
+  } catch (e) {
+    console.warn('compressedCropper.setAspectRatio failed', e)
+  }
   // Update dimensions after aspect ratio change
   if (originalCropper.value) {
     updateCropDimensions(originalCropper.value)

@@ -73,7 +73,18 @@
             "
             class="svg-conversion-options"
           >
-            <div class="svg-options-title">SVG Conversion Settings</div>
+            <div class="svg-options-title">
+              <span>SVG Conversion Settings</span>
+              <button
+                class="aspect-lock-btn"
+                :aria-pressed="svgMaintainAspect"
+                :title="svgMaintainAspect ? 'Aspect locked' : 'Aspect unlocked'"
+                @click.prevent="svgMaintainAspect = !svgMaintainAspect"
+              >
+                <span v-if="svgMaintainAspect">🔒</span>
+                <span v-else>🔓</span>
+              </button>
+            </div>
             <div class="svg-options-grid">
               <div class="svg-option-group">
                 <label class="svg-option-label">Width (optional)</label>
@@ -99,8 +110,9 @@
               </div>
             </div>
             <div class="svg-options-hint">
-              Use 0 for auto-sizing that dimension. Aspect ratio will be
-              preserved.
+              Use 0 for auto-sizing that dimension. When the lock is enabled,
+              changing one dimension will automatically update the other to keep
+              the SVG's intrinsic aspect ratio (if available).
             </div>
           </div>
         </div>
@@ -300,6 +312,14 @@
                         <span class="btn-icon">⬇️</span>
                         <span class="btn-text">Download</span>
                       </button>
+                      <button
+                        v-if="r.success && r.blob"
+                        class="conversion-use-btn"
+                        @click="applyConversionResultToParent(r)"
+                      >
+                        <span class="btn-icon">👆</span>
+                        <span class="btn-text">Use this result</span>
+                      </button>
                     </div>
                   </div>
 
@@ -433,6 +453,14 @@
                         <span class="btn-icon">⬇️</span>
                         <span class="btn-text">Download</span>
                       </button>
+                      <button
+                        v-if="r.success && r.blob"
+                        class="conversion-use-btn"
+                        @click="applyConversionResultToParent(r)"
+                      >
+                        <span class="btn-icon">👆</span>
+                        <span class="btn-text">Use this result</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -501,10 +529,9 @@ interface Props {
 
 const props = defineProps<Props>()
 
-// 定义事件 (暂时未使用，但保留以备将来扩展)
-// const emit = defineEmits<{
-//   open: [item: { id: string; file: File; originalUrl: string; quality: number }]
-// }>()
+// 事件：向父组件发出选择的转换结果以便应用到 image-card
+// Use simple emits declaration to avoid complex TS template typing issues
+const emit = defineEmits(['apply-conversion'])
 
 // 格式转换对比面板状态
 const showConversionPanel = ref(false)
@@ -649,6 +676,47 @@ const appElement = ref<HTMLElement | null>(null)
 // SVG转换选项 - 默认设置为512x512
 const svgWidth = ref<number | undefined>(512)
 const svgHeight = ref<number | undefined>(512)
+// Preserve aspect ratio lock and intrinsic aspect
+const svgMaintainAspect = ref(true)
+const svgIntrinsicAspect = ref<number | undefined>(undefined)
+let _adjustingSvgDim = false
+
+async function detectSvgIntrinsicAspectFromFile(
+  file: File,
+): Promise<number | undefined> {
+  try {
+    const text = await file.text()
+    if (!text) return undefined
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(text, 'image/svg+xml')
+    const svg = doc.querySelector('svg')
+    if (!svg) return undefined
+
+    // Try width/height attributes first
+    const rawW = svg.getAttribute('width')
+    const rawH = svg.getAttribute('height')
+    if (rawW && rawH) {
+      const w = parseFloat(rawW)
+      const h = parseFloat(rawH)
+      if (w > 0 && h > 0 && !Number.isNaN(w) && !Number.isNaN(h)) {
+        return w / h
+      }
+    }
+
+    // Fallback to viewBox
+    const vb = svg.getAttribute('viewBox')
+    if (vb) {
+      const parts = vb.split(/[,\s]+/).map((s) => parseFloat(s))
+      if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+        return parts[2] / parts[3]
+      }
+    }
+
+    return undefined
+  } catch (e) {
+    return undefined
+  }
+}
 
 // 恢复滚动状态的统一函数
 function restoreScrollState() {
@@ -681,10 +749,51 @@ function openFormatSelectDialog(item: {
   targetImageItem.value = item
   targetImageName.value = item.file.name
 
-  // Reset SVG dimensions to default 512x512
+  // Reset SVG dimensions to default 512x512 and detect intrinsic aspect
   svgWidth.value = 512
   svgHeight.value = 512
+  svgIntrinsicAspect.value = undefined
+  svgMaintainAspect.value = true
+  // detect intrinsic aspect ratio from file (async, best-effort)
+  ;(async () => {
+    const aspect = await detectSvgIntrinsicAspectFromFile(item.file)
+    if (aspect && aspect > 0) {
+      svgIntrinsicAspect.value = aspect
+      // if user hasn't changed dims, recompute height to preserve aspect
+      if (!svgWidth.value && !svgHeight.value) {
+        svgWidth.value = 512
+        svgHeight.value = Math.max(1, Math.round(512 / aspect))
+      } else if (svgWidth.value && !svgHeight.value) {
+        svgHeight.value = Math.max(1, Math.round(svgWidth.value / aspect))
+      } else if (svgHeight.value && !svgWidth.value) {
+        svgWidth.value = Math.max(1, Math.round(svgHeight.value * aspect))
+      } else if (svgWidth.value && svgHeight.value) {
+        // adjust height to match width if maintainAspect is true
+        if (svgMaintainAspect.value) {
+          svgHeight.value = Math.max(1, Math.round(svgWidth.value / aspect))
+        }
+      }
+    }
+  })()
 
+  // Keep dimensions in sync when user wants to preserve aspect ratio
+  watch(svgWidth, (newW) => {
+    if (!svgMaintainAspect.value || _adjustingSvgDim) return
+    const aspect = svgIntrinsicAspect.value
+    if (!newW || !aspect) return
+    _adjustingSvgDim = true
+    svgHeight.value = Math.max(1, Math.round(newW / aspect))
+    _adjustingSvgDim = false
+  })
+
+  watch(svgHeight, (newH) => {
+    if (!svgMaintainAspect.value || _adjustingSvgDim) return
+    const aspect = svgIntrinsicAspect.value
+    if (!newH || !aspect) return
+    _adjustingSvgDim = true
+    svgWidth.value = Math.max(1, Math.round(newH * aspect))
+    _adjustingSvgDim = false
+  })
   // 获取app-container元素
   appContainer.value = document.querySelector('.app-container') as HTMLElement
   appElement.value = document.querySelector('#app') as HTMLElement
@@ -943,6 +1052,22 @@ function downloadConversionResult(r: ConversionCompareItemWithUrl) {
         ? 'Convert Only'
         : 'Convert→Compress'
   ElMessage.success(`Downloaded ${flowLabel} result as ${fileName}`)
+}
+
+// 将选中的转换结果发送给父组件以替换 image-card 的图片
+function applyConversionResultToParent(r: ConversionCompareItemWithUrl) {
+  if (!r.success || !r.blob || !targetImageItem.value) return
+
+  emit('apply-conversion', {
+    id: targetImageItem.value.id,
+    blob: r.blob,
+    size: r.size,
+    mime: r.meta.convertOptions.targetFormat,
+    url: r.url,
+  })
+
+  // 关闭转换面板以便查看替换后的卡片
+  closeConversionPanel()
 }
 
 // 图片缩放控制
@@ -1257,6 +1382,39 @@ defineExpose({
   openFormatSelectDialog,
 })
 </script>
+
+<style scoped>
+.svg-aspect-lock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.aspect-lock-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+}
+.aspect-lock-btn[aria-pressed='true'] {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+.aspect-lock-btn:focus {
+  outline: 2px solid rgba(0, 120, 212, 0.25);
+}
+
+.svg-options-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.svg-options-title button.aspect-lock-btn {
+  padding: 4px 6px;
+  font-size: 14px;
+}
+</style>
 
 <style scoped>
 .format-conversion {
@@ -2640,6 +2798,26 @@ defineExpose({
 
 .conversion-download-btn:hover .btn-icon {
   transform: scale(1.1);
+}
+
+/* Use this result button */
+.conversion-use-btn {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.conversion-use-btn:hover {
+  transform: translateY(-2px);
 }
 
 /* Dialog Footer */

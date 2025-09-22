@@ -41,7 +41,6 @@ import {
   getCompressionStats,
   memoryManager,
   waitForCompressionInitialization,
-  convertImage,
   detectFileFormat,
 } from '../../src'
 
@@ -81,6 +80,11 @@ interface ImageItem {
   file: File
   originalUrl: string
   compressedUrl?: string
+  // If a conversion result was applied to replace the card image
+  replacedUrl?: string
+  replacedBlob?: Blob
+  replacedMime?: string
+  replacedSize?: number
   originalSize: number
   compressedSize?: number
   compressionRatio?: number
@@ -1698,6 +1702,13 @@ function deleteImage(index: number) {
   if (item.compressedUrl) {
     URL.revokeObjectURL(item.compressedUrl)
   }
+  if (item.replacedUrl) {
+    try {
+      URL.revokeObjectURL(item.replacedUrl)
+    } catch (e) {
+      /* ignore */
+    }
+  }
 
   imageItems.value.splice(index, 1)
 
@@ -1722,6 +1733,13 @@ function clearAllImages() {
       }
       if (item.compressedUrl) {
         URL.revokeObjectURL(item.compressedUrl)
+      }
+      if (item.replacedUrl) {
+        try {
+          URL.revokeObjectURL(item.replacedUrl)
+        } catch (e) {
+          /* ignore */
+        }
       }
     })
 
@@ -1773,14 +1791,24 @@ function generateFolderName(): string {
 
 // 下载单个图片（保持原始文件名）
 async function downloadImage(item: ImageItem) {
-  if (!item.compressedUrl) return
+  // Prefer replacedUrl (user-applied conversion) or fall back to compressedUrl
+  const sourceUrl = item.replacedUrl || item.compressedUrl
+  if (!sourceUrl) return
 
   try {
-    const originalName = item.file.name
-    download(item.compressedUrl, originalName)
+    // choose filename based on replacedMime if present
+    let fileName = item.file.name
+    if (item.replacedMime) {
+      const nameWithoutExt = item.file.name.replace(/\.[^/.]+$/, '')
+      const ext = String(item.replacedMime).replace('image/', '')
+      const extension = ext === 'jpeg' ? 'jpg' : ext
+      fileName = `${nameWithoutExt}.${extension}`
+    }
+
+    download(sourceUrl, fileName)
 
     ElMessage({
-      message: `Downloaded: ${originalName}`,
+      message: `Downloaded: ${fileName}`,
       type: 'success',
       duration: 2000,
     })
@@ -1792,12 +1820,70 @@ async function downloadImage(item: ImageItem) {
   }
 }
 
+// 接收来自 FormatConversion 组件的应用事件，将转换结果应用到对应的 image item
+function applyConversionToItem(payload: {
+  id: string
+  blob: Blob
+  size?: number
+  mime?: string
+  url?: string
+}) {
+  const idx = imageItems.value.findIndex((it) => it.id === payload.id)
+  if (idx === -1) return
+  const item = imageItems.value[idx]
+
+  // 清理旧的 replacedUrl
+  if (item.replacedUrl) {
+    try {
+      URL.revokeObjectURL(item.replacedUrl)
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  // Prefer to create our own object URL from the blob (if provided).
+  // The conversion panel creates temporary URLs for preview and will revoke
+  // them when it closes — if we reuse that URL the parent may end up
+  // holding a revoked URL. Creating our own URL from the blob avoids this.
+  const newUrl = payload.blob ? URL.createObjectURL(payload.blob) : payload.url
+  item.replacedUrl = newUrl
+  item.replacedBlob = payload.blob
+  item.replacedMime = payload.mime
+  item.replacedSize = payload.size
+
+  // 更新视图
+  triggerRef(imageItems)
+
+  ElMessage.success('Applied converted image to card')
+}
+
+// 恢复被替换的图片（还原到上传时的原始图片）
+function restoreReplacedImage(item: ImageItem) {
+  if (!item.replacedUrl) return
+
+  try {
+    URL.revokeObjectURL(item.replacedUrl)
+  } catch (e) {
+    /* ignore */
+  }
+
+  item.replacedUrl = undefined
+  item.replacedBlob = undefined
+  item.replacedMime = undefined
+  item.replacedSize = undefined
+
+  triggerRef(imageItems)
+  ElMessage.info('Restored original uploaded image')
+}
+
 // 批量下载所有图片（创建 ZIP 压缩包）
 async function downloadAllImages() {
   if (downloading.value) return
 
+  // Prefer items that have either a replacedUrl (user-applied conversion) or compressedUrl
   const downloadableItems = imageItems.value.filter(
-    (item) => item.compressedUrl && !item.compressionError,
+    (item) =>
+      (item.replacedUrl || item.compressedUrl) && !item.compressionError,
   )
   if (downloadableItems.length === 0) {
     ElMessage({
@@ -1826,14 +1912,24 @@ async function downloadAllImages() {
 
     // 将所有压缩图片添加到 ZIP 中
     for (const item of downloadableItems) {
-      if (item.compressedUrl) {
-        // 获取压缩后的 Blob 数据
-        const response = await fetch(item.compressedUrl)
-        const blob = await response.blob()
+      // Prefer replacedUrl (applied conversion) over compressedUrl
+      const sourceUrl = item.replacedUrl || item.compressedUrl
+      if (!sourceUrl) continue
 
-        // 使用原始文件名添加到 ZIP 文件夹中
-        folder.file(item.file.name, blob)
+      const response = await fetch(sourceUrl)
+      const blob = await response.blob()
+
+      // If we have mime for replaced or can infer extension, adjust filename
+      let fileName = item.file.name
+      if (item.replacedMime) {
+        // try to swap extension to replacedMime
+        const nameWithoutExt = item.file.name.replace(/\.[^/.]+$/, '')
+        const ext = String(item.replacedMime).replace('image/', '')
+        const extension = ext === 'jpeg' ? 'jpg' : ext
+        fileName = `${nameWithoutExt}.${extension}`
       }
+
+      folder.file(fileName, blob)
     }
 
     // 生成 ZIP 文件
@@ -2447,7 +2543,9 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
             <div class="image-preview">
               <img
                 class="preview-image"
-                :src="item.originalUrl"
+                :src="
+                  item.replacedUrl || item.compressedUrl || item.originalUrl
+                "
                 :alt="item.file.name"
               />
               <div
@@ -2457,6 +2555,15 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 @click.stop="openCropPage(item)"
               >
                 ✂️
+              </div>
+              <!-- Restore button shown on hover when image was replaced by a conversion result -->
+              <div
+                v-if="item.replacedUrl"
+                class="restore-hover-btn"
+                title="Restore original upload"
+                @click.stop="restoreReplacedImage(item)"
+              >
+                ↺
               </div>
               <div
                 v-if="item.isCompressing || item.isUploading"
@@ -2486,12 +2593,16 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 </div>
                 <div class="image-format" :class="{ 'svg-format': item.isSvg }">
                   {{
-                    item.isSvg
-                      ? 'SVG'
-                      : item.file.type.split('/')[1].toUpperCase()
+                    item.replacedMime
+                      ? String(item.replacedMime).toUpperCase()
+                      : item.isSvg
+                        ? 'SVG'
+                        : item.file.type.split('/')[1].toUpperCase()
                   }}
                 </div>
               </div>
+
+              <!-- Replaced details removed — keep hover restore button only -->
 
               <div class="image-stats">
                 <!-- SVG files show simple size info -->
@@ -2505,12 +2616,14 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   <div class="svg-conversion-hint">
                     Ready for format conversion
                   </div>
-                  
+
                   <!-- Additional SVG information to fill space -->
                   <div class="svg-description">
                     <div class="svg-feature">
                       <span class="feature-icon"></span>
-                      <span class="feature-text">Quality control not supported</span>
+                      <span class="feature-text"
+                        >Quality control not supported</span
+                      >
                     </div>
                   </div>
                 </div>
@@ -2537,7 +2650,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                     <div class="size-item">
                       <span class="size-label">Compressed</span>
                       <span class="size-value compressed">{{
-                        formatFileSize(item.compressedSize || 0)
+                        // If the user applied a converted replacement, show its size
+                        item.replacedSize
+                          ? formatFileSize(item.replacedSize)
+                          : formatFileSize(item.compressedSize || 0)
                       }}</span>
                     </div>
                   </div>
@@ -3113,6 +3229,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       ref="formatConversionRef"
       :tool-configs="toolConfigs"
       :preserve-exif="preserveExif"
+      @apply-conversion="(p) => applyConversionToItem(p)"
     />
   </div>
 </template>
@@ -5472,6 +5589,28 @@ img-comparison-slider img,
   transform: scale(0.9);
 }
 
+/* Restore button shown when an image has been replaced by format conversion */
+.restore-hover-btn {
+  position: absolute;
+  right: 44px;
+  top: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #111827;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-weight: 700;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.18s ease,
+    transform 0.12s ease;
+}
+
+.image-preview:hover .restore-hover-btn {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
 .action-btn-small:hover {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -5719,7 +5858,6 @@ img-comparison-slider img,
   0% {
     opacity: 0;
   }
-
   10% {
     opacity: 1;
   }
