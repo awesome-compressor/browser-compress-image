@@ -18,20 +18,35 @@ export async function warmupJsquashWasm(): Promise<void> {
       }),
     )
 
-    // Additionally fetch the underlying WASM files to seed SW runtime cache
-    const wasmFile: Record<(typeof formats)[number], string> = {
-      png: 'squoosh_png_bg.wasm',
-      jpeg: 'mozjpeg_bg.wasm',
-      webp: 'squoosh_webp_bg.wasm',
+    // Additionally fetch the underlying WASM files to seed SW runtime cache.
+    // Some packages (notably webp) place encoder/decoder WASM files under
+    // codec/enc and codec/dec. Use an array of wasm paths per format so we
+    // can fetch all relevant files.
+    const wasmFiles: Record<(typeof formats)[number], string[]> = {
+      png: ['pkg/squoosh_png_bg.wasm'],
+      jpeg: ['enc/mozjpeg_enc.wasm', 'dec/mozjpeg_dec.wasm'],
+      // webp ships separate encoder/decoder .wasm under codec/enc and codec/dec
+      webp: ['dec/webp_dec.wasm', 'enc/webp_enc.wasm'],
     }
+
     await Promise.all(
       formats.map(async (fmt) => {
-        const url = `https://unpkg.com/@jsquash/${fmt}/codec/${wasmFile[fmt]}`
-        try {
-          await fetch(url, { mode: 'cors', cache: 'reload' })
-        } catch (e) {
-          console.warn(`[warmup] WASM fetch failed for ${fmt}:`, e)
-        }
+        const files = wasmFiles[fmt] || []
+        await Promise.all(
+          files.map(async (file) => {
+            // include @latest to match the module import above and point to
+            // the correct nested path (e.g. /codec/dec/webp_dec.wasm)
+            const url = `https://unpkg.com/@jsquash/${fmt}@latest/codec/${file}`
+            try {
+              await fetch(url, { mode: 'cors', cache: 'reload' })
+            } catch (e) {
+              console.warn(
+                `[warmup] WASM fetch failed for ${fmt} (${file}):`,
+                e,
+              )
+            }
+          }),
+        )
       }),
     )
   } catch (err) {

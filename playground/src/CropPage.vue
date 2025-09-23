@@ -455,7 +455,8 @@ onMounted(() => {
   // 记录当前滚动位置
   // If parent provided a scrollTop (from app container), prefer it
   const parentTop = (props as any).parentScrollTop as number | undefined
-  savedScrollY.value = typeof parentTop === 'number' ? parentTop : window.scrollY
+  savedScrollY.value =
+    typeof parentTop === 'number' ? parentTop : window.scrollY
 
   // 禁用body滚动并固定位置
   document.body.style.overflow = 'hidden'

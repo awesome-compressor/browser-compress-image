@@ -152,7 +152,9 @@ function openCropPage(item: ImageItem) {
   cropOriginalUrl.value = item.originalUrl
   cropCompressedUrl.value = item.compressedUrl
   // compute current scroll position of the app container so the modal can align
-  const appContainerEl = document.querySelector('.app-container') as HTMLElement | null
+  const appContainerEl = document.querySelector(
+    '.app-container',
+  ) as HTMLElement | null
   const st = appContainerEl ? appContainerEl.scrollTop : window.scrollY || 0
   cropPageParentScrollTop.value = st
   showCropPage.value = true
