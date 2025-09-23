@@ -21,11 +21,12 @@ interface Props {
   originalSize?: number
   compressedSize?: number
   onClose?: () => void
+  parentScrollTop?: number
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits(['close', 'apply'])
-
+console.log('CropPage props:', props)
 const originalImgRef = ref<HTMLImageElement | null>(null)
 const compressedImgRef = ref<HTMLImageElement | null>(null)
 const originalCropper = ref<Cropper | null>(null)
@@ -452,23 +453,25 @@ function handleClickOutside(e: MouseEvent) {
 onMounted(() => {
   updateIsMobile()
   // 记录当前滚动位置
-  savedScrollY.value = window.scrollY
+  // If parent provided a scrollTop (from app container), prefer it
+  const parentTop = (props as any).parentScrollTop as number | undefined
+  savedScrollY.value = typeof parentTop === 'number' ? parentTop : window.scrollY
 
   // 禁用body滚动并固定位置
   document.body.style.overflow = 'hidden'
   document.body.style.position = 'fixed'
-  document.body.style.top = `-${savedScrollY.value}px`
   document.body.style.width = '100%'
 
   // 设置弹窗位置，让它显示在视口中心
   const cropPage = document.querySelector('.crop-page') as HTMLElement
   if (cropPage) {
-    // Position the popup at the current page scrollTop so it aligns with
-    // the viewport at the moment of opening. Use the previously saved
-    // scroll position (savedScrollY) which reflects window.scrollY.
+    // Position the popup at the saved scrollTop so it aligns with the
+    // parent container's viewport when opening.
     cropPage.style.top = `${savedScrollY.value}px`
-
     cropPage.style.height = '100vh'
+    // Also position the backdrop to cover the scrolled viewport
+    const backdrop = document.querySelector('.crop-backdrop') as HTMLElement
+    if (backdrop) backdrop.style.top = `${savedScrollY.value}px`
   }
 
   initCroppers()

@@ -141,6 +141,7 @@ const showCropPage = ref(false)
 const cropOriginalUrl = ref('')
 const cropCompressedUrl = ref('')
 const croppingIndex = ref<number | null>(null)
+const cropPageParentScrollTop = ref(0)
 
 function openCropPage(item: ImageItem) {
   if (!item.compressedUrl) {
@@ -150,6 +151,10 @@ function openCropPage(item: ImageItem) {
   croppingIndex.value = imageItems.value.findIndex((it) => it.id === item.id)
   cropOriginalUrl.value = item.originalUrl
   cropCompressedUrl.value = item.compressedUrl
+  // compute current scroll position of the app container so the modal can align
+  const appContainerEl = document.querySelector('.app-container') as HTMLElement | null
+  const st = appContainerEl ? appContainerEl.scrollTop : window.scrollY || 0
+  cropPageParentScrollTop.value = st
   showCropPage.value = true
 }
 
@@ -3119,6 +3124,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       :compressed-name="currentImage?.file.name"
       :original-size="currentImage?.originalSize"
       :compressed-size="currentImage?.compressedSize"
+      :parentScrollTop="cropPageParentScrollTop"
       @close="closeCropPage"
       @apply="applyCropPreprocess"
     />
