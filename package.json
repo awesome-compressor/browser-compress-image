@@ -2,6 +2,7 @@
   "name": "@awesome-compressor/browser-compress-image",
   "type": "module",
   "version": "0.0.3",
+  "sideEffects": false,
   "packageManager": "pnpm@10.14.0",
   "description": "🚀 A powerful, lightweight browser image compression library with TypeScript support. Compress JPEG, PNG, GIF images with multiple output formats (Blob, File, Base64, ArrayBuffer) and zero dependencies.",
   "author": {
@@ -42,6 +43,21 @@
   ],
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./tools": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./conversion": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./utils": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.js"
