@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.0.3",
   "sideEffects": false,
-  "packageManager": "pnpm@10.14.0",
+  "packageManager": "pnpm@10.18.1",
   "description": "🚀 A powerful, lightweight browser image compression library with TypeScript support. Compress JPEG, PNG, GIF images with multiple output formats (Blob, File, Base64, ArrayBuffer) and zero dependencies.",
   "author": {
     "name": "Simon He",
@@ -70,14 +70,13 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown --minify",
     "play": "pnpm run -C playground dev",
     "dev": "pnpm run -C playground dev",
     "play:build": "pnpm run -C playground build",
     "lint": "prettier --cache --write .",
     "test": "vitest --dir test -u",
     "test:ci": "vitest --dir test -u",
-    "size": "pnpm build && size-limit",
     "ptest": "pnpm run -C playground test -u",
     "preview": "pnpm run -C playground preview",
     "test:e2e": "cypress open",
@@ -92,23 +91,14 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.19.0",
-    "@size-limit/preset-small-lib": "^11.2.0",
-    "@sxzz/prettier-config": "^2.2.3",
+    "@sxzz/prettier-config": "^2.2.4",
     "@types/node": "^17.0.45",
     "bumpp": "^7.2.0",
-    "eslint": "^9.33.0",
+    "eslint": "^9.37.0",
     "prettier": "^3.6.2",
-    "size-limit": "^7.0.0",
     "tsdown": "^0.12.9",
-    "typescript": "^5.9.2",
+    "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   },
-  "prettier": "@sxzz/prettier-config",
-  "size-limit": [
-    {
-      "path": "dist/index.js",
-      "limit": "200 KB",
-      "gzip": true
-    }
-  ]
+  "prettier": "@sxzz/prettier-config"
 }
