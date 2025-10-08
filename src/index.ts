@@ -1,5 +1,6 @@
 // 主要的压缩函数 - 保持向后兼容
-export { compress, type CompressionStats, compressWithStats } from './compress'
+export { compress, compressWithStats } from './compress'
+// ...type exports consolidated below
 
 // Enhanced compression with queue and worker support (NEW)
 export {
@@ -7,17 +8,14 @@ export {
   compressEnhanced,
   compressEnhancedBatch,
   configureCompression,
-  type EnhancedCompressOptions,
   getCompressionStats,
   waitForCompressionInitialization,
 } from './compressEnhanced'
+// ...type exports consolidated below
 
 // 新的可配置压缩系统
 export {
-  type CompressorFunction,
-  type CompressorTool,
   compressWithTools,
-  type CompressWithToolsOptions,
   globalToolRegistry,
   ToolRegistry,
 } from './compressWithTools'
@@ -40,16 +38,12 @@ export * from './types'
 export {
   CompressionQueue,
   compressionQueue,
-  type CompressionTask,
   PerformanceDetector,
-  type QueueStats,
 } from './utils/compressionQueue'
 
 export {
   CompressionWorkerManager,
   compressionWorkerManager,
-  type WorkerMessage,
-  type WorkerTask,
 } from './utils/compressionWorker'
 
 // 工具函数
@@ -60,17 +54,13 @@ export {
   checkMemoryBeforeOperation,
   MemoryManager,
   memoryManager,
-  type MemoryStats,
-  type MemoryThresholds,
 } from './utils/memoryManager'
 
 // Expose internal logger so consumers can enable debug logs at runtime
-export { default as logger } from './utils/logger'
-export { setLogger, resetLogger } from './utils/logger'
+export { default as logger, setLogger, resetLogger } from './utils/logger'
 
 // Image preprocessing
 export { preprocessImage } from './utils/preprocessImage'
-export type { PreprocessOptions, CropRect, ResizeOptions } from './types'
 
 // Image conversion (including SVG support)
 export {
@@ -94,3 +84,16 @@ export {
   diagnoseJsquashAvailability,
   downloadWasmFiles,
 } from './tools/compressWithJsquash'
+
+// Centralized type-only exports for clarity
+export type { CompressionStats } from './compress'
+export type { EnhancedCompressOptions } from './compressEnhanced'
+export type {
+  CompressorFunction,
+  CompressorTool,
+  CompressWithToolsOptions,
+} from './compressWithTools'
+export type { CompressionTask, QueueStats } from './utils/compressionQueue'
+export type { WorkerMessage, WorkerTask } from './utils/compressionWorker'
+export type { MemoryStats, MemoryThresholds } from './utils/memoryManager'
+export type { PreprocessOptions, CropRect, ResizeOptions } from './types'
