@@ -5,7 +5,7 @@
 本库已经实现了多项性能优化，解决了大量图片压缩时的性能瓶颈问题。主要优化包括：
 
 1. **队列管理系统** - 控制并发数量，避免系统过载
-2. **Worker支持** - 利用Web Workers进行后台压缩计算
+2. **Worker支持（实验性）** - 预留了 Web Worker 接入点，但当前版本默认仍使用主线程压缩
 3. **设备性能自适应** - 根据设备性能动态调整并发数量
 4. **内存管理** - 智能资源管理和内存清理
 
@@ -13,7 +13,7 @@
 
 ### 1. 增强的压缩函数（推荐）
 
-使用新的 `compressEnhanced` 函数获得最佳性能：
+使用新的 `compressEnhanced` 函数获得更稳定的批量压缩性能：
 
 ```typescript
 import { compressEnhanced } from 'browser-compress-image'
@@ -21,7 +21,6 @@ import { compressEnhanced } from 'browser-compress-image'
 // 单个文件压缩
 const result = await compressEnhanced(file, {
   quality: 0.8,
-  useWorker: true, // 启用Worker支持
   useQueue: true, // 启用队列管理
   priority: 10, // 设置优先级（可选）
   timeout: 30000, // 设置超时时间
@@ -32,16 +31,15 @@ import { compressEnhancedBatch } from 'browser-compress-image'
 
 const results = await compressEnhancedBatch(files, {
   quality: 0.8,
-  useWorker: true,
   useQueue: true,
 })
 ```
 
 ### 2. 兼容性说明
 
-- **Worker支持**: 自动检测浏览器Worker支持，不支持时自动降级到主线程
+- **Worker支持**: 当前构建默认关闭 `useWorker`，只有在你明确选择实验路径时才会尝试 Worker
 - **DOM依赖工具**: `canvas` 和 `jsquash` 工具使用DOM API，在Worker中会自动降级到主线程
-- **Worker兼容工具**: `browser-image-compression`, `compressorjs`, `gifsicle`, `tinypng` 支持Worker
+- **当前推荐**: 使用 `useQueue: true` 获得并发控制和内存管理收益，把 Worker 视为后续能力
 
 ## 性能特性
 
@@ -129,7 +127,6 @@ const compressed = await compress(file, { quality: 0.8 })
 // 新的优化方式
 const compressed = await compressEnhanced(file, {
   quality: 0.8,
-  useWorker: true,
   useQueue: true,
 })
 ```
@@ -149,7 +146,6 @@ async function compressImages(items: ImageItem[]) {
       quality: globalQuality.value,
       preserveExif: preserveExif.value,
       toolConfigs: enabledToolConfigs,
-      useWorker: true,
       useQueue: true,
     })
 
@@ -203,8 +199,8 @@ setInterval(() => {
 ## 最佳实践
 
 1. **总是使用增强的压缩函数**: `compressEnhanced` 和 `compressEnhancedBatch`
-2. **启用Worker**: 设置 `useWorker: true` 来利用后台处理
-3. **启用队列**: 设置 `useQueue: true` 来控制并发
+2. **优先启用队列**: 设置 `useQueue: true` 来控制并发并降低卡顿
+3. **谨慎使用Worker**: 只有在你确认实验路径满足需求时，再显式设置 `useWorker: true`
 4. **设置合适的超时**: 为大文件设置较长的超时时间
 5. **监控性能**: 定期检查队列和内存状态
 6. **清理资源**: 不再需要的对象URL要及时清理
@@ -217,7 +213,7 @@ setInterval(() => {
 import { compressionWorkerManager } from 'browser-compress-image'
 
 if (!compressionWorkerManager.isSupported()) {
-  console.log('Worker不支持，将使用主线程压缩')
+  console.log('当前构建未启用可用的 Worker 压缩路径，将使用主线程压缩')
 }
 ```
 
@@ -258,7 +254,6 @@ clearCompressionQueue()
 ```typescript
 // 高性能配置（桌面端）
 const highPerformanceConfig = {
-  useWorker: true,
   useQueue: true,
   priority: 10,
   timeout: 60000,
@@ -266,7 +261,6 @@ const highPerformanceConfig = {
 
 // 移动端配置
 const mobileConfig = {
-  useWorker: true,
   useQueue: true,
   priority: 5,
   timeout: 30000,

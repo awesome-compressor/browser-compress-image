@@ -71,6 +71,12 @@ export async function preprocessImage(
     Math.round(rotH),
     options.resize,
   )
+  const useCoverResize =
+    options.resize?.fit === 'cover' &&
+    !options.resize.targetWidth &&
+    !options.resize.targetHeight &&
+    !!options.resize.maxWidth &&
+    !!options.resize.maxHeight
 
   // Create canvas
   const canvas = memoryManager.createManagedCanvas()
@@ -115,7 +121,19 @@ export async function preprocessImage(
   // Now scale temp into final canvas
   // Use drawImage for scaling; browsers apply good quality sampling
   ctx.clearRect(0, 0, canvas.width, canvas.height)
-  ctx.drawImage(temp, 0, 0, canvas.width, canvas.height)
+  if (useCoverResize) {
+    const scale = Math.max(
+      canvas.width / temp.width,
+      canvas.height / temp.height,
+    )
+    const drawWidth = temp.width * scale
+    const drawHeight = temp.height * scale
+    const drawX = (canvas.width - drawWidth) / 2
+    const drawY = (canvas.height - drawHeight) / 2
+    ctx.drawImage(temp, drawX, drawY, drawWidth, drawHeight)
+  } else {
+    ctx.drawImage(temp, 0, 0, canvas.width, canvas.height)
+  }
   ctx.restore()
 
   const mime =

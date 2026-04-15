@@ -13,8 +13,9 @@ import logger from './utils/logger'
 // Enhanced compression options with queue and worker support
 export interface EnhancedCompressOptions extends CompressOptions {
   /**
-   * Whether to use worker for compression (when available)
-   * @default true
+   * Whether to attempt worker compression.
+   * Experimental and disabled by default until worker-side compression is fully implemented.
+   * @default false
    */
   useWorker?: boolean
 
@@ -43,15 +44,15 @@ export interface EnhancedCompressOptions extends CompressOptions {
 }
 
 /**
- * Enhanced compression function with queue management and worker support
- * This is the new recommended way to compress images for better performance
+ * Enhanced compression function with queue management.
+ * Queue-backed compression is the recommended default; worker compression remains opt-in.
  */
 export async function compressEnhanced<T extends CompressResultType = 'blob'>(
   file: File,
   options: EnhancedCompressOptions = {},
 ): Promise<CompressResult<T>> {
   const {
-    useWorker = true,
+    useWorker = false,
     useQueue = true,
     priority,
     timeout = 30000,

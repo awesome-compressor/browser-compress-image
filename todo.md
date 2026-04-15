@@ -2,17 +2,17 @@
 
 ## High Priority
 
-- [ ] Finish the worker story so the implementation matches the API and docs.
+- [x] Finish the worker story so the implementation matches the API and docs.
   - Files: `src/utils/compressionWorker.ts`, `src/compressEnhanced.ts`, `docs/performance-optimization-guide.md`
-  - Plan: either implement real worker-side compression tool loading/execution, or keep worker disabled by default and update the docs/examples to say it is experimental.
+  - Done: kept worker disabled by default and updated docs/examples to describe it as experimental until real worker-side compression exists.
 
-- [ ] Stop `jsquash` from reporting fake success outside browser runtimes.
+- [x] Stop `jsquash` from reporting fake success outside browser runtimes.
   - Files: `src/tools/compressWithJsquash.ts`, `src/compress.ts`, `src/compressWithTools.ts`
-  - Plan: return an explicit failure in non-browser environments so multi-tool comparisons cannot pick the original file as a successful `jsquash` result.
+  - Done: non-browser `jsquash` now throws explicitly so multi-tool comparisons fall back honestly.
 
-- [ ] Implement real `fit: 'cover'` behavior in preprocessing.
+- [x] Implement real `fit: 'cover'` behavior in preprocessing.
   - Files: `src/utils/resize.ts`, `src/utils/preprocessImage.ts`
-  - Plan: compute cover scaling separately from contain/scale-down and add focused regression tests.
+  - Done: cover resizing now computes crop-fill dimensions correctly and has focused regression tests.
 
 ## Product / Docs Alignment
 

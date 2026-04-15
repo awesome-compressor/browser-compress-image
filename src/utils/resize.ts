@@ -50,6 +50,23 @@ export function resolveResizeDimensions(
   if (maxWidth || maxHeight) {
     const maxW = maxWidth ?? Number.POSITIVE_INFINITY
     const maxH = maxHeight ?? Number.POSITIVE_INFINITY
+
+    if (fit === 'cover') {
+      if (maxWidth && maxHeight) {
+        return { width: maxWidth, height: maxHeight }
+      }
+
+      if (maxWidth) {
+        const scale = maxWidth / srcW
+        return { width: maxWidth, height: Math.round(srcH * scale) }
+      }
+
+      if (maxHeight) {
+        const scale = maxHeight / srcH
+        return { width: Math.round(srcW * scale), height: maxHeight }
+      }
+    }
+
     const scale = Math.min(maxW / srcW, maxH / srcH, 1)
 
     if (fit === 'scale-down') {
@@ -57,7 +74,7 @@ export function resolveResizeDimensions(
         width = Math.round(srcW * scale)
         height = Math.round(srcH * scale)
       }
-    } else if (fit === 'contain' || fit === 'cover') {
+    } else if (fit === 'contain') {
       width = Math.round(srcW * scale)
       height = Math.round(srcH * scale)
     }

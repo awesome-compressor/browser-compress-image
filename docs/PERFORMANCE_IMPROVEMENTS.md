@@ -10,11 +10,11 @@
    - 基于设备性能动态调整并发数量
    - 支持任务优先级和统计信息
 
-2. **Worker支持系统** (`src/utils/compressionWorker.ts`)
-   - 实现了Web Worker支持，将压缩计算移到后台线程
-   - 自动检测Worker兼容性，不兼容时降级到主线程
-   - 识别DOM依赖工具(canvas, jsquash)，自动使用主线程
-   - Worker兼容工具：browser-image-compression, compressorjs, gifsicle, tinypng
+2. **Worker支持系统（实验性）** (`src/utils/compressionWorker.ts`)
+   - 目前保留了 Worker 执行入口和能力探测逻辑
+   - 当前构建默认使用主线程压缩，避免把请求路由到未完成的 Worker 实现
+   - 识别DOM依赖工具(canvas, jsquash)，这些工具即使未来接入 Worker 也仍需主线程
+   - Worker 仍属于后续能力，不应视为当前默认高性能路径
 
 3. **设备性能检测** (集成在压缩队列中)
    - 自动检测移动设备、CPU核心数、内存大小
@@ -29,7 +29,7 @@
 
 5. **增强压缩API** (`src/compressEnhanced.ts`)
    - 新的`compressEnhanced`和`compressEnhancedBatch`函数
-   - 集成队列管理、Worker支持和内存优化
+   - 集成队列管理、可选 Worker 开关和内存优化
    - 向后兼容，可直接替换原有compress调用
    - 支持超时控制和错误处理
 
@@ -53,7 +53,7 @@
 ### 计算性能
 
 - **之前**: 所有压缩在主线程，阻塞UI
-- **现在**: Worker后台处理，主线程保持响应
+- **现在**: 队列控制并发，主线程路径更稳定；Worker 仍是实验能力
 
 ### 设备适配
 
@@ -68,10 +68,9 @@
 // 旧代码
 const result = await compress(file, { quality: 0.8 })
 
-// 新代码（自动获得所有性能优化）
+// 新代码（默认获得队列和内存优化）
 const result = await compressEnhanced(file, {
   quality: 0.8,
-  useWorker: true, // 启用Worker支持
   useQueue: true, // 启用队列管理
 })
 ```
@@ -82,7 +81,6 @@ const result = await compressEnhanced(file, {
 // 替换App.vue中的批量压缩逻辑
 const results = await compressEnhancedBatch(files, {
   quality: 0.8,
-  useWorker: true,
   useQueue: true,
 })
 ```
@@ -90,7 +88,7 @@ const results = await compressEnhancedBatch(files, {
 ## 兼容性保证
 
 - ✅ 完全向后兼容，原有`compress`函数继续可用
-- ✅ Worker不支持时自动降级到主线程
+- ✅ 当前构建默认使用主线程压缩，避免命中未完成的 Worker 路径
 - ✅ DOM依赖工具自动使用主线程
 - ✅ 所有浏览器环境都能正常工作
 
@@ -115,7 +113,7 @@ const memoryStats = memoryManager.getMemoryStats()
 
 ## 技术特点
 
-1. **零配置优化**: 默认开启所有优化，无需手动配置
+1. **零配置优化**: 默认开启队列和内存相关优化，无需手动配置
 2. **智能降级**: 不支持的功能自动降级，确保兼容性
 3. **资源管理**: 自动管理内存和DOM资源，防止泄漏
 4. **性能监控**: 提供完整的统计和监控API
@@ -128,4 +126,4 @@ const memoryStats = memoryManager.getMemoryStats()
 3. **测试效果**: 在大量图片场景下测试性能改进
 4. **用户体验**: 关注UI响应性和压缩速度的提升
 
-所有优化已经完成并可以立即使用。用户现在可以处理大量图片而不会遇到性能瓶颈或浏览器崩溃的问题。
+队列、内存管理和增强 API 已经可以立即使用。Worker 路径仍需后续实现后再作为默认能力对外宣传。

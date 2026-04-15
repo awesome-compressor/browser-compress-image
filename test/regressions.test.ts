@@ -56,6 +56,23 @@ describe('resize regressions', () => {
 })
 
 describe('adapter regressions', () => {
+  it('fails jsquash explicitly outside browser runtimes', async () => {
+    const { default: compressWithJsquash } = await import(
+      '../src/tools/compressWithJsquash'
+    )
+
+    const file = new File(['x'.repeat(1000)], 'test.jpg', {
+      type: 'image/jpeg',
+    })
+
+    await expect(
+      compressWithJsquash(file, {
+        quality: 0.8,
+        mode: 'keepSize',
+      }),
+    ).rejects.toThrow('JSQuash requires a browser environment')
+  })
+
   it('passes a finite resize bound to browser-image-compression for one-sided resize', async () => {
     stubImageDimensions(400, 200)
 

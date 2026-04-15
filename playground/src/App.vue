@@ -899,10 +899,10 @@ function checkDevicePerformance() {
     const stats = getCompressionStats()
 
     if (stats.worker.supported) {
-      console.log('✅ Web Workers supported - background compression enabled')
+      console.log('⚠️  Experimental worker compression is available')
     } else {
       console.log(
-        '⚠️  Web Workers not supported - using main thread compression',
+        'ℹ️  Using queue-managed main thread compression (worker path is experimental)',
       )
     }
 
@@ -913,7 +913,7 @@ function checkDevicePerformance() {
       )
     const concurrency = stats.queue.maxConcurrency
     console.log(
-      `${isMobile ? '📱 Mobile' : '🖥️  Desktop'} mode detected - Max ${concurrency} concurrent compressions${stats.worker.supported ? ' with Worker support' : ''}`,
+      `${isMobile ? '📱 Mobile' : '🖥️  Desktop'} mode detected - Max ${concurrency} concurrent compressions${stats.worker.supported ? ' with experimental worker path' : ''}`,
     )
     // ElMessage({
     //   message: `${isMobile ? '📱 Mobile' : '🖥️  Desktop'} mode detected - Max ${concurrency} concurrent compressions${stats.worker.supported ? ' with Worker support' : ''}`,
@@ -1483,7 +1483,7 @@ async function addNewImages(files: File[]) {
             quality: globalQuality.value,
             preserveExif: preserveExif.value,
             toolConfigs: enabledToolConfigs,
-            useWorker: true,
+            useWorker: false,
             useQueue: true,
             timeout: deviceTimeout, // 使用设备适配的超时时间
             signal: controller.signal,
@@ -1592,13 +1592,13 @@ async function compressImage(item: ImageItem): Promise<void> {
       (config) => config.enabled && config.key.trim(),
     )
 
-    // 使用增强的压缩函数，自动获得队列管理和Worker支持
+    // 使用增强的压缩函数，默认走队列 + 主线程压缩
     const compressedBlob = await compressEnhanced(item.file, {
       quality: item.quality, // 直接使用图片的质量设置（已经是0-1范围）
       preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
       toolConfigs: enabledToolConfigs, // 传入工具配置
       preprocess: item.preprocess, // 预处理：裁剪/旋转/缩放
-      useWorker: true, // 启用Worker支持（如果可用）
+      useWorker: false, // Worker 路径仍在完善，当前默认走主线程
       useQueue: true, // 启用队列管理
       timeout: getDeviceBasedTimeout(30000), // 设备适配的超时时间
       signal: controller.signal,

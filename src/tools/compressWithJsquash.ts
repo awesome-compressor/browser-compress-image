@@ -44,16 +44,6 @@ function isBrowser(): boolean {
   return typeof window !== 'undefined' && typeof document !== 'undefined'
 }
 
-// 检测是否在 Vitest 环境中（用于在测试时静默短路）
-function isVitest(): boolean {
-  try {
-    // Vitest 会在 globalThis 上设置 __vitest__ 标记
-    return typeof (globalThis as any).__vitest__ !== 'undefined'
-  } catch (e) {
-    return false
-  }
-}
-
 // 动态导入JSQuash模块
 async function importJsquashModule(format: OutputType): Promise<any> {
   if (!isBrowser()) {
@@ -317,16 +307,10 @@ export default async function compressWithJsquash(
   const { quality, mode, targetWidth, targetHeight, maxWidth, maxHeight } =
     options
 
-  // If not running in a browser, short-circuit and return the original file.
-  // This avoids attempting to load WASM / DOM APIs in Node (e.g. during tests).
+  // JSQuash needs browser-only APIs and should fail explicitly when unavailable
+  // so multi-tool comparisons can fall back to other tools honestly.
   if (!isBrowser()) {
-    // 在测试环境中静默短路以避免噪声日志
-    if (!isVitest()) {
-      logger.warn(
-        'JSQuash: non-browser environment detected; skipping WASM compression and returning original file',
-      )
-    }
-    return file
+    throw new Error('JSQuash requires a browser environment')
   }
 
   // 确定输出格式
