@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   convertImage,
   detectFileFormat,
@@ -6,6 +6,23 @@ import {
   renderSvgToCanvas,
   encodeSvgToFormat,
 } from '../src/conversion'
+import {
+  encodeIcoFromImage,
+  encodeWithCanvas,
+} from '../src/conversion/encoders'
+
+function createMockPngData(width: number, height: number) {
+  const data = new Uint8Array(24)
+  data.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0)
+  data.set([0x00, 0x00, 0x00, 0x0d], 8)
+  data.set([0x49, 0x48, 0x44, 0x52], 12)
+
+  const view = new DataView(data.buffer)
+  view.setUint32(16, width)
+  view.setUint32(20, height)
+
+  return data
+}
 
 // Mock DOM APIs for Node.js environment
 global.Image = class MockImage {
@@ -64,7 +81,12 @@ global.HTMLCanvasElement = class MockCanvas {
     if (type === 'image/jpeg') mimeType = 'image/jpeg'
     else if (type === 'image/webp') mimeType = 'image/webp'
 
-    const mockBlob = new Blob(['mock-image-data'], { type: mimeType })
+    const mockBlob =
+      type === 'image/png'
+        ? new Blob([createMockPngData(this.width, this.height)], {
+            type: mimeType,
+          })
+        : new Blob(['mock-image-data'], { type: mimeType })
     // Use microtask for immediate callback
     queueMicrotask(() => callback(mockBlob))
   }
@@ -150,6 +172,37 @@ describe('SVG canvas rendering', () => {
     expect(canvas.width).toBe(400)
     expect(canvas.height).toBe(300)
   })
+
+  it('should avoid creating an object URL when canvas context is unavailable', async () => {
+    const originalURL = global.URL
+    const originalCreateElement = global.document.createElement
+    const createObjectURL = vi.fn(() => 'mock-object-url')
+    const revokeObjectURL = vi.fn()
+
+    global.URL = {
+      createObjectURL,
+      revokeObjectURL,
+    } as any
+    global.document.createElement = (tagName: string) => {
+      if (tagName === 'canvas') {
+        return {
+          getContext: () => null,
+        } as any
+      }
+      return originalCreateElement(tagName)
+    }
+
+    try {
+      await expect(renderSvgToCanvas(testSvg)).rejects.toThrow(
+        'Canvas context not available',
+      )
+      expect(createObjectURL).not.toHaveBeenCalled()
+      expect(revokeObjectURL).not.toHaveBeenCalled()
+    } finally {
+      global.URL = originalURL
+      global.document.createElement = originalCreateElement
+    }
+  })
 })
 
 describe('SVG to format encoding', () => {
@@ -188,6 +241,71 @@ describe('SVG to format encoding', () => {
     })
     expect(blob).toBeInstanceOf(Blob)
     expect(blob.type).toBe('image/png')
+  })
+
+  it('should preserve an explicit quality of 0 for canvas encoding', async () => {
+    const originalCreateElement = global.document.createElement
+    let receivedQuality: number | undefined
+
+    global.document.createElement = (tagName: string) => {
+      if (tagName === 'canvas') {
+        return {
+          width: 0,
+          height: 0,
+          getContext: () => ({
+            drawImage: () => {},
+          }),
+          toBlob: (
+            callback: (blob: Blob | null) => void,
+            type?: string,
+            quality?: number,
+          ) => {
+            receivedQuality = quality
+            queueMicrotask(() => callback(new Blob(['x'], { type })))
+          },
+        } as any
+      }
+
+      return originalCreateElement(tagName)
+    }
+
+    try {
+      const file = new File(['fake-jpeg'], 'test.jpg', { type: 'image/jpeg' })
+      const blob = await encodeWithCanvas(file, 'jpeg', 0)
+      expect(blob.type).toBe('image/jpeg')
+      expect(receivedQuality).toBe(0)
+    } finally {
+      global.document.createElement = originalCreateElement
+    }
+  })
+
+  it('should revoke object URLs after raster canvas conversion', async () => {
+    const originalURL = global.URL
+    const createObjectURL = vi.fn(() => 'mock-object-url')
+    const revokeObjectURL = vi.fn()
+
+    global.URL = {
+      createObjectURL,
+      revokeObjectURL,
+    } as any
+
+    try {
+      const file = new File(['fake-png'], 'test.png', { type: 'image/png' })
+      await encodeWithCanvas(file, 'png')
+      expect(createObjectURL).toHaveBeenCalledTimes(1)
+      expect(revokeObjectURL).toHaveBeenCalledTimes(1)
+    } finally {
+      global.URL = originalURL
+    }
+  })
+
+  it('should write actual PNG dimensions into ICO metadata', async () => {
+    const file = new File(['fake-png'], 'test.png', { type: 'image/png' })
+    const blob = await encodeIcoFromImage(file)
+    const header = new Uint8Array(await blob.arrayBuffer())
+
+    expect(header[6]).toBe(200)
+    expect(header[7]).toBe(200)
   })
 })
 

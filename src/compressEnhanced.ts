@@ -93,15 +93,17 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
     }
   }
 
+  const compressionFile =
+    inputForCompression instanceof File
+      ? inputForCompression
+      : new File([inputForCompression], file.name, {
+          type: (inputForCompression as Blob).type,
+        })
+
   // For single file compression, use direct compression if queue is disabled
   if (!useQueue) {
     return (await compressDirectly(
-      // if preprocessed, wrap as File to retain name when possible
-      inputForCompression instanceof File
-        ? inputForCompression
-        : new File([inputForCompression], file.name, {
-            type: (inputForCompression as Blob).type,
-          }),
+      compressionFile,
       compressOptions,
       useWorker,
       type,
@@ -110,17 +112,15 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
 
   // Use queue for concurrency control
   const compressPromise = compressionQueue.compress(
-    inputForCompression instanceof File
-      ? inputForCompression
-      : new File([inputForCompression], file.name, {
-          type: (inputForCompression as Blob).type,
-        }),
+    compressionFile,
     {
       ...compressOptions,
       useWorker,
       type: 'blob', // Always get blob from queue, convert later if needed
     },
     priority,
+    (queuedFile, queuedOptions) =>
+      compressBlob(queuedFile, queuedOptions, useWorker),
   )
 
   // Add timeout wrapper
@@ -147,36 +147,38 @@ async function compressDirectly<T extends CompressResultType>(
   useWorker: boolean,
   type: T,
 ): Promise<CompressResult<T>> {
-  let compressedBlob: Blob
+  const compressedBlob = await compressBlob(file, options, useWorker)
+  return (await convertBlobToType(compressedBlob, type)) as CompressResult<T>
+}
 
-  // Determine if we should use worker
+async function compressBlob(
+  file: File,
+  options: CompressOptions,
+  useWorker: boolean,
+): Promise<Blob> {
   const shouldUseWorker =
     useWorker &&
     compressionWorkerManager.isSupported() &&
     canUseWorkerForFile(file, options)
 
-  if (shouldUseWorker) {
-    try {
-      // Try worker compression first
-      compressedBlob = await compressionWorkerManager.compressInWorker(
-        file,
-        options,
-      )
-      logger.log('Used worker compression for', file.name)
-    } catch (error) {
-      logger.warn(
-        'Worker compression failed, falling back to main thread:',
-        error,
-      )
-      // Fallback to main thread compression
-      compressedBlob = await compressInMainThread(file, options)
-    }
-  } else {
-    // Use main thread compression directly
-    compressedBlob = await compressInMainThread(file, options)
+  if (!shouldUseWorker) {
+    return compressInMainThread(file, options)
   }
 
-  return (await convertBlobToType(compressedBlob, type)) as CompressResult<T>
+  try {
+    const compressedBlob = await compressionWorkerManager.compressInWorker(
+      file,
+      options,
+    )
+    logger.log('Used worker compression for', file.name)
+    return compressedBlob
+  } catch (error) {
+    logger.warn(
+      'Worker compression failed, falling back to main thread:',
+      error,
+    )
+    return compressInMainThread(file, options)
+  }
 }
 
 /**

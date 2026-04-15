@@ -1,4 +1,5 @@
 import gifsicle from 'gifsicle-wasm-browser'
+import { hasResizeOptions, resolveResizeDimensions } from '../utils/resize'
 
 // gifsicle 工具
 export default async function compressWithGifsicle(
@@ -35,9 +36,25 @@ export default async function compressWithGifsicle(
     let resizeOption = ''
     if (targetWidth && targetHeight) {
       resizeOption = `--resize ${targetWidth}x${targetHeight}`
-    } else if (maxWidth || maxHeight) {
-      const maxSize = Math.min(maxWidth || 9999, maxHeight || 9999)
-      resizeOption = `--resize-fit ${maxSize}x${maxSize}`
+    } else if (
+      hasResizeOptions({ targetWidth, targetHeight, maxWidth, maxHeight })
+    ) {
+      const { width: originalWidth, height: originalHeight } =
+        await getImageDimensions(file)
+      const { width, height } = resolveResizeDimensions(
+        originalWidth,
+        originalHeight,
+        {
+          targetWidth,
+          targetHeight,
+          maxWidth,
+          maxHeight,
+        },
+      )
+
+      if (width !== originalWidth || height !== originalHeight) {
+        resizeOption = `--resize-fit ${width}x${height}`
+      }
     }
 
     command = `
@@ -62,4 +79,25 @@ export default async function compressWithGifsicle(
   }
 
   return compressedBlob
+}
+
+function getImageDimensions(
+  file: File,
+): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      resolve({ width: img.width, height: img.height })
+    }
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Failed to load image'))
+    }
+
+    img.src = url
+  })
 }

@@ -4,20 +4,53 @@ import logger from '../utils/logger'
 // 缓存对象，用于存储文件的压缩结果（最多缓存50个文件）
 const compressionCache = new LRUCache<string, Blob>(50)
 
-// 生成文件的唯一标识符
-function generateFileKey(file: File, options: any): string {
+function getRelevantOptions(options: any) {
   // TinyPNG不支持质量调整，所以忽略quality参数
   // 只考虑文件内容、尺寸调整参数
-  const relevantOptions = {
+  return {
     targetWidth: options.targetWidth,
     targetHeight: options.targetHeight,
     maxWidth: options.maxWidth,
     maxHeight: options.maxHeight,
     mode: options.mode === 'keepQuality' ? options.mode : undefined, // 只有keepQuality模式下才考虑尺寸调整
   }
+}
 
-  // 使用文件名、大小、最后修改时间和相关选项生成key
-  return `${file.name}_${file.size}_${file.lastModified}_${JSON.stringify(relevantOptions)}`
+function hashFileContent(buffer: Uint8Array): string {
+  let hash = 2166136261
+
+  for (const byte of buffer) {
+    hash ^= byte
+    hash = Math.imul(hash, 16777619)
+  }
+
+  return (hash >>> 0).toString(16)
+}
+
+// 生成文件的唯一标识符
+async function generateFileKey(file: File, options: any): Promise<string> {
+  const relevantOptions = getRelevantOptions(options)
+  const contentHash = hashFileContent(new Uint8Array(await file.arrayBuffer()))
+
+  return `${file.type}_${contentHash}_${JSON.stringify(relevantOptions)}`
+}
+
+function resolveApiKey(options: { key?: string }): string | undefined {
+  if (options.key) {
+    return options.key
+  }
+
+  if (typeof process !== 'undefined' && process.env?.TINYPNG_API_KEY) {
+    return process.env.TINYPNG_API_KEY
+  }
+
+  const windowKey =
+    typeof globalThis !== 'undefined'
+      ? (globalThis as { window?: { TINYPNG_API_KEY?: string } }).window
+          ?.TINYPNG_API_KEY
+      : undefined
+
+  return windowKey
 }
 
 export function compressWithTinyPng(
@@ -36,7 +69,7 @@ export function compressWithTinyPng(
   return new Promise(async (resolve, reject) => {
     try {
       // 生成缓存key
-      const cacheKey = generateFileKey(file, options)
+      const cacheKey = await generateFileKey(file, options)
 
       // 检查缓存
       if (compressionCache.has(cacheKey)) {
@@ -45,7 +78,7 @@ export function compressWithTinyPng(
         return
       }
       // 检查是否提供了 TinyPNG API 密钥
-      const apiKey = options.key
+      const apiKey = resolveApiKey(options)
 
       if (!apiKey) {
         reject(

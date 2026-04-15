@@ -167,13 +167,23 @@ export async function buildConversionColumn(
               type: 'blob' as CompressResultType,
             })
 
-            const bestResult = compressResultsAfterConvert.allResults
-              .filter((result) => result.success)
-              .reduce(
-                (best, current) =>
-                  current.compressedSize < best.compressedSize ? current : best,
-                compressResultsAfterConvert.allResults[0],
+            const successfulResults =
+              compressResultsAfterConvert.allResults.filter(
+                (result) => result.success,
               )
+
+            if (successfulResults.length === 0) {
+              const firstError = compressResultsAfterConvert.allResults.find(
+                (result) => result.error,
+              )
+              throw new Error(
+                firstError?.error || 'All compression attempts failed',
+              )
+            }
+
+            const bestResult = successfulResults.reduce((best, current) =>
+              current.compressedSize < best.compressedSize ? current : best,
+            )
 
             const totalDuration = performance.now() - startTime
 

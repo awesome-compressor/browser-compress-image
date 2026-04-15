@@ -324,12 +324,6 @@ async function compressWithMultipleTools(
         duration,
       } as CompressionAttempt
     } catch (error) {
-      // 如果某个工具失败（包括超时/取消），中止所有其他工具
-      try {
-        sharedController.abort()
-      } catch (e) {
-        /* ignore */
-      }
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
 
@@ -497,13 +491,6 @@ async function compressWithMultipleToolsAndReturnAll<
         duration,
       } as CompressionAttempt
     } catch (error) {
-      // 某个工具失败（含超时/取消），中止其他工具
-      try {
-        sharedController.abort()
-      } catch (e) {
-        /* ignore */
-      }
-
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
 

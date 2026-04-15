@@ -1,3 +1,5 @@
+import { hasResizeOptions, resolveResizeDimensions } from '../utils/resize'
+
 // Canvas 工具
 export default async function compressWithCanvas(
   file: File,
@@ -11,22 +13,35 @@ export default async function compressWithCanvas(
     preserveExif?: boolean
   },
 ): Promise<Blob> {
-  const { quality, targetWidth, targetHeight, maxWidth, maxHeight } = options
+  const { quality, mode, targetWidth, targetHeight, maxWidth, maxHeight } =
+    options
 
   // 注意：Canvas API 本身不支持 EXIF 保留，preserveExif 参数在此处被忽略
   // 如果需要保留 EXIF，建议使用其他压缩工具如 browser-image-compression
 
-  let finalWidth = targetWidth || maxWidth
-  let finalHeight = targetHeight || maxHeight
-
-  if (!finalWidth && !finalHeight) {
-    const { width, height } = await getImageDimensions(file)
-    finalWidth = width
-    finalHeight = height
-  }
+  const { width: originalWidth, height: originalHeight } =
+    await getImageDimensions(file)
+  const shouldResize =
+    mode === 'keepQuality' &&
+    hasResizeOptions({ targetWidth, targetHeight, maxWidth, maxHeight })
+  const { width: finalWidth, height: finalHeight } = shouldResize
+    ? resolveResizeDimensions(originalWidth, originalHeight, {
+        targetWidth,
+        targetHeight,
+        maxWidth,
+        maxHeight,
+      })
+    : { width: originalWidth, height: originalHeight }
 
   // 智能压缩策略
-  return await smartCanvasCompress(file, finalWidth!, finalHeight!, quality)
+  return await smartCanvasCompress(
+    file,
+    finalWidth,
+    finalHeight,
+    quality,
+    originalWidth,
+    originalHeight,
+  )
 }
 
 // 智能 Canvas 压缩函数
@@ -35,10 +50,10 @@ async function smartCanvasCompress(
   targetWidth: number,
   targetHeight: number,
   quality: number,
+  originalWidth: number,
+  originalHeight: number,
 ): Promise<Blob> {
   const originalSize = file.size
-  const { width: originalWidth, height: originalHeight } =
-    await getImageDimensions(file)
 
   // 如果尺寸没有变化且是高度优化的小文件，直接返回原文件
   if (

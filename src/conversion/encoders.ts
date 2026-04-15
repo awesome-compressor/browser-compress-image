@@ -64,7 +64,10 @@ export async function encodeWithCanvas(
       return
     }
 
+    const url = URL.createObjectURL(file)
+
     img.onload = () => {
+      URL.revokeObjectURL(url)
       canvas.width = img.width
       canvas.height = img.height
       ctx.drawImage(img, 0, 0)
@@ -75,11 +78,11 @@ export async function encodeWithCanvas(
       switch (format) {
         case 'jpeg':
           mimeType = 'image/jpeg'
-          qualityParam = quality || 0.8
+          qualityParam = quality ?? 0.8
           break
         case 'webp':
           mimeType = 'image/webp'
-          qualityParam = quality || 0.8
+          qualityParam = quality ?? 0.8
           break
         case 'png':
           mimeType = 'image/png'
@@ -102,8 +105,11 @@ export async function encodeWithCanvas(
       )
     }
 
-    img.onerror = () => reject(new Error('Failed to load image'))
-    img.src = URL.createObjectURL(file)
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Failed to load image'))
+    }
+    img.src = url
   })
 }
 
@@ -131,13 +137,12 @@ export async function encodeIcoFromImage(
     ])
 
     // ICO directory entry: 16 bytes
-    const width = 256 // Use 0 for 256
-    const height = 256 // Use 0 for 256
+    const { width, height } = getPngDimensions(pngArray)
     const pngSize = pngArray.length
 
     const icoDirectory = new Uint8Array([
-      width === 256 ? 0 : width, // Width (0 = 256)
-      height === 256 ? 0 : height, // Height (0 = 256)
+      width >= 256 ? 0 : width, // Width (0 = 256)
+      height >= 256 ? 0 : height, // Height (0 = 256)
       0x00, // Color count (0 = no palette)
       0x00, // Reserved (must be 0)
       0x01,
@@ -181,10 +186,6 @@ export async function renderSvgToCanvas(
   height?: number,
 ): Promise<HTMLCanvasElement> {
   return new Promise((resolve, reject) => {
-    // Create SVG blob and object URL
-    const svgBlob = new Blob([svgContent], { type: 'image/svg+xml' })
-    const url = URL.createObjectURL(svgBlob)
-
     const img = new Image()
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
@@ -193,6 +194,9 @@ export async function renderSvgToCanvas(
       reject(new Error('Canvas context not available'))
       return
     }
+
+    const svgBlob = new Blob([svgContent], { type: 'image/svg+xml' })
+    const url = URL.createObjectURL(svgBlob)
 
     img.onload = () => {
       try {
@@ -247,11 +251,11 @@ export async function encodeSvgToFormat(
       switch (format) {
         case 'jpeg':
           mimeType = 'image/jpeg'
-          qualityParam = quality || 0.8
+          qualityParam = quality ?? 0.8
           break
         case 'webp':
           mimeType = 'image/webp'
-          qualityParam = quality || 0.8
+          qualityParam = quality ?? 0.8
           break
         case 'png':
           mimeType = 'image/png'
@@ -304,6 +308,22 @@ export async function encodeSvgToFormat(
     throw new Error(
       `SVG encoding failed: ${error instanceof Error ? error.message : String(error)}`,
     )
+  }
+}
+
+function getPngDimensions(pngArray: Uint8Array): {
+  width: number
+  height: number
+} {
+  const header = new DataView(
+    pngArray.buffer,
+    pngArray.byteOffset,
+    pngArray.byteLength,
+  )
+
+  return {
+    width: header.getUint32(16),
+    height: header.getUint32(20),
   }
 }
 

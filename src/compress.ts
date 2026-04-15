@@ -89,6 +89,30 @@ interface CompressionAttempt {
   duration: number // 压缩耗时（毫秒）
 }
 
+async function createCacheKey(
+  file: File,
+  options: {
+    quality: number
+    mode: string
+    targetWidth?: number
+    targetHeight?: number
+    maxWidth?: number
+    maxHeight?: number
+    preserveExif: boolean
+    toolConfigs: ToolConfig[]
+  },
+): Promise<string> {
+  const buffer = await file.arrayBuffer()
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', buffer)
+  const hash = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('')
+
+  return `hash=${hash}:type=${file.type}:q=${options.quality}:m=${options.mode}:tw=${options.targetWidth || ''}:th=${options.targetHeight || ''}:mw=${options.maxWidth || ''}:mh=${options.maxHeight || ''}:preserveExif=${options.preserveExif}:cfg=${JSON.stringify(
+    options.toolConfigs,
+  )}`
+}
+
 const toolsCollections: Record<string, CompressorTool[]> = {
   png: ['jsquash', 'browser-image-compression', 'canvas'],
   gif: ['gifsicle'],
@@ -167,17 +191,29 @@ export async function compress<T extends CompressResultType = 'blob'>(
     timeoutMs,
   }
 
-  // 构建缓存 key（仅用于单结果路径）
-  const cacheKey = `${file.name}:${file.size}:type=${file.type}:q=${quality}:m=${mode}:tw=${targetWidth || ''}:th=${targetHeight || ''}:mw=${maxWidth || ''}:mh=${maxHeight || ''}:preserveExif=${preserveExif}:cfg=${JSON.stringify(
-    toolConfigs,
-  )}`
+  let cacheKey: string | undefined
 
   // 如果需要返回所有结果，则不使用缓存（避免结构不一致）
   if (!returnAllResults) {
-    const cached = compressResultCache.get(cacheKey)
-    if (cached) {
-      logger.debug('Cache hit for', cacheKey)
-      return convertBlobToType(cached, resultType, file.name)
+    try {
+      cacheKey = await createCacheKey(file, {
+        quality,
+        mode,
+        targetWidth,
+        targetHeight,
+        maxWidth,
+        maxHeight,
+        preserveExif,
+        toolConfigs,
+      })
+
+      const cached = compressResultCache.get(cacheKey)
+      if (cached) {
+        logger.debug('Cache hit for', cacheKey)
+        return convertBlobToType(cached, resultType, file.name)
+      }
+    } catch (error) {
+      logger.warn('Failed to build cache key, skipping cache', error)
     }
   }
 
@@ -221,10 +257,12 @@ export async function compress<T extends CompressResultType = 'blob'>(
   )
 
   // 将结果存入缓存（仅缓存单结果路径）
-  try {
-    compressResultCache.set(cacheKey, bestResult)
-  } catch (e) {
-    logger.warn('Failed to cache compress result', e)
+  if (cacheKey) {
+    try {
+      compressResultCache.set(cacheKey, bestResult)
+    } catch (e) {
+      logger.warn('Failed to cache compress result', e)
+    }
   }
 
   return convertBlobToType(bestResult, resultType, file.name)
@@ -319,12 +357,6 @@ async function compressWithMultipleTools(
         duration,
       } as CompressionAttempt
     } catch (error) {
-      // 工具失败（含超时/取消），中止其他工具
-      try {
-        sharedController.abort()
-      } catch (e) {
-        /* ignore */
-      }
       const endTime = performance.now()
       const duration = Math.round(endTime - startTime)
 

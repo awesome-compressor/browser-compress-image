@@ -1,5 +1,6 @@
 import { memoryManager } from './memoryManager'
-import type { PreprocessOptions, ResizeOptions } from '../types'
+import type { PreprocessOptions } from '../types'
+import { resolveResizeDimensions } from './resize'
 
 // Load a Blob/File/String into an HTMLImageElement
 async function loadImage(src: Blob | File | string): Promise<HTMLImageElement> {
@@ -14,63 +15,15 @@ async function loadImage(src: Blob | File | string): Promise<HTMLImageElement> {
         URL.revokeObjectURL(url)
         resolve(img)
       }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        reject(new Error('Failed to load image'))
+      }
       img.src = url
     } else {
       img.src = src
     }
   })
-}
-
-function computeResize(
-  srcW: number,
-  srcH: number,
-  resize?: ResizeOptions,
-): { width: number; height: number } {
-  if (!resize) return { width: srcW, height: srcH }
-
-  const {
-    targetWidth,
-    targetHeight,
-    maxWidth,
-    maxHeight,
-    fit = 'contain',
-  } = resize
-
-  // Direct target sizing
-  if (targetWidth && targetHeight)
-    return { width: targetWidth, height: targetHeight }
-  if (targetWidth && !targetHeight) {
-    const scale = targetWidth / srcW
-    return { width: targetWidth, height: Math.round(srcH * scale) }
-  }
-  if (!targetWidth && targetHeight) {
-    const scale = targetHeight / srcH
-    return { width: Math.round(srcW * scale), height: targetHeight }
-  }
-
-  // Max constraints
-  let w = srcW
-  let h = srcH
-  if (maxWidth || maxHeight) {
-    const maxW = maxWidth ?? Number.POSITIVE_INFINITY
-    const maxH = maxHeight ?? Number.POSITIVE_INFINITY
-    const scale = Math.min(maxW / srcW, maxH / srcH, 1)
-    if (fit === 'scale-down') {
-      if (scale < 1) {
-        w = Math.round(srcW * scale)
-        h = Math.round(srcH * scale)
-      }
-    } else if (fit === 'contain') {
-      w = Math.round(srcW * scale)
-      h = Math.round(srcH * scale)
-    } else if (fit === 'cover') {
-      // cover 意味着输出尺寸受 max 限制，但可能超出一边；这里等同 contain 处理
-      const coverScale = Math.min(maxW / srcW, maxH / srcH, 1)
-      w = Math.round(srcW * coverScale)
-      h = Math.round(srcH * coverScale)
-    }
-  }
-  return { width: w, height: h }
 }
 
 export interface PreprocessInputMeta {
@@ -113,7 +66,11 @@ export async function preprocessImage(
   const rotH = Math.abs(cropW * sin) + Math.abs(cropH * cos)
 
   // Final output size after resize
-  const size = computeResize(Math.round(rotW), Math.round(rotH), options.resize)
+  const size = resolveResizeDimensions(
+    Math.round(rotW),
+    Math.round(rotH),
+    options.resize,
+  )
 
   // Create canvas
   const canvas = memoryManager.createManagedCanvas()
@@ -175,14 +132,17 @@ export async function preprocessImage(
     )
   })
 
+  const width = canvas.width
+  const height = canvas.height
+
   // Cleanup temp canvas
   memoryManager.cleanupCanvasElement(temp)
   memoryManager.cleanupCanvasElement(canvas)
 
   return {
     blob,
-    width: canvas.width,
-    height: canvas.height,
+    width,
+    height,
     mimeType: blob.type,
   }
 }

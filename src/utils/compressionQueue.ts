@@ -5,6 +5,7 @@ export interface CompressionTask {
   options: any
   resolve: (result: Blob) => void
   reject: (error: Error) => void
+  execute?: (file: File, options: any) => Promise<Blob>
   priority?: number // Higher number = higher priority
   // Optional cancel listener used to cleanup when task is started or removed
   cancelListener?: () => void
@@ -229,19 +230,24 @@ export class CompressionQueue {
         task.cancelListener = undefined
       }
 
-      // Import compress function dynamically to avoid circular dependency
-      const { compress } = await import('../compress')
+      let blob: Blob
+      if (task.execute) {
+        blob = await task.execute(task.file, task.options)
+      } else {
+        // Import compress function dynamically to avoid circular dependency
+        const { compress } = await import('../compress')
 
-      const result = await compress(task.file, {
-        ...task.options,
-        type: 'blob',
-      })
+        const result = await compress(task.file, {
+          ...task.options,
+          type: 'blob',
+        })
 
-      // Extract the actual blob from the result (compress may return MultipleCompressResults)
-      const blob =
-        typeof result === 'object' && 'bestResult' in result
-          ? result.bestResult
-          : result
+        // Extract the actual blob from the result (compress may return MultipleCompressResults)
+        blob =
+          typeof result === 'object' && 'bestResult' in result
+            ? result.bestResult
+            : (result as Blob)
+      }
 
       this.running.delete(task.id)
       this.completed++
@@ -266,7 +272,12 @@ export class CompressionQueue {
   }
 
   // Utility: Create a promise-based compression task
-  compress(file: File, options: any, priority?: number): Promise<Blob> {
+  compress(
+    file: File,
+    options: any,
+    priority?: number,
+    execute?: (file: File, options: any) => Promise<Blob>,
+  ): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const taskId = `${file.name}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
@@ -276,6 +287,7 @@ export class CompressionQueue {
         options,
         resolve,
         reject,
+        execute,
         priority,
       }
 

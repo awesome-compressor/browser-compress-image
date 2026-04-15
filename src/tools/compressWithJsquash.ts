@@ -1,5 +1,6 @@
 import type { OutputType } from '../types'
 import logger from '../utils/logger'
+import { hasResizeOptions, resolveResizeDimensions } from '../utils/resize'
 
 // Track WASM module initialization promises to avoid duplicate loading
 const wasmLoadPromises = new Map<OutputType, Promise<void>>()
@@ -313,7 +314,8 @@ export default async function compressWithJsquash(
     preserveExif?: boolean
   },
 ): Promise<Blob> {
-  const { quality, targetWidth, targetHeight, maxWidth, maxHeight } = options
+  const { quality, mode, targetWidth, targetHeight, maxWidth, maxHeight } =
+    options
 
   // If not running in a browser, short-circuit and return the original file.
   // This avoids attempting to load WASM / DOM APIs in Node (e.g. during tests).
@@ -342,12 +344,24 @@ export default async function compressWithJsquash(
 
     // 处理尺寸调整
     let processedImageData = imageData
-    if (targetWidth || targetHeight || maxWidth || maxHeight) {
-      processedImageData = await resizeImageData(
-        imageData,
-        targetWidth || maxWidth,
-        targetHeight || maxHeight,
+    if (
+      mode === 'keepQuality' &&
+      hasResizeOptions({ targetWidth, targetHeight, maxWidth, maxHeight })
+    ) {
+      const { width, height } = resolveResizeDimensions(
+        imageData.width,
+        imageData.height,
+        {
+          targetWidth,
+          targetHeight,
+          maxWidth,
+          maxHeight,
+        },
       )
+
+      if (width !== imageData.width || height !== imageData.height) {
+        processedImageData = await resizeImageData(imageData, width, height)
+      }
     }
 
     // 根据格式进行压缩

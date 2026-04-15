@@ -30,6 +30,7 @@ export class CompressionWorkerManager {
   private workers: Worker[] = []
   private workerTasks: Map<string, WorkerTask> = new Map()
   private workerPool: Worker[] = []
+  private workerUrls: WeakMap<Worker, string> = new WeakMap()
   private isWorkerSupported: boolean = false
   private workerScript: string | null = null
   private initPromise: Promise<void> | null = null
@@ -87,15 +88,10 @@ let compressionFunctions = null;
 // Import compression tools dynamically
 async function initializeTools() {
   try {
-    // Note: In a real implementation, you'd need to properly bundle and load the tools
-    // For now, we'll simulate the import structure
-    
-    // These would be the actual tool imports
-    // const browserImageCompression = await import('browser-image-compression');
-    // const compressorjs = await import('compressorjs');
-    
-  console.log('Compression tools initialized in worker');
-    return true;
+    // Real worker-side tool bootstrapping is not implemented yet.
+    // Report failure so the main thread can fall back instead of
+    // routing work onto a placeholder worker path.
+    return false;
   } catch (error) {
   console.error('Failed to initialize compression tools in worker:', error);
     return false;
@@ -183,27 +179,41 @@ console.log('Compression worker ready');
         const testWorker = new Worker(workerUrl)
         const testId = `test_${Date.now()}`
 
-        const timeout = setTimeout(() => {
+        const cleanup = () => {
+          clearTimeout(timeout)
           testWorker.terminate()
           URL.revokeObjectURL(workerUrl)
+        }
+
+        const timeout = setTimeout(() => {
+          cleanup()
           reject(new Error('Worker test timeout'))
         }, 5000)
 
         testWorker.onmessage = (e) => {
           const { id, type, data } = e.data
 
-          if (id === testId && type === 'result') {
-            clearTimeout(timeout)
-            testWorker.terminate()
-            URL.revokeObjectURL(workerUrl)
-            resolve()
+          if (id !== testId) {
+            return
           }
+
+          cleanup()
+
+          if (type === 'result' && data?.initialized === true) {
+            resolve()
+            return
+          }
+
+          if (type === 'error') {
+            reject(new Error(data?.message || 'Worker initialization failed'))
+            return
+          }
+
+          reject(new Error('Worker initialization failed'))
         }
 
         testWorker.onerror = (error) => {
-          clearTimeout(timeout)
-          testWorker.terminate()
-          URL.revokeObjectURL(workerUrl)
+          cleanup()
           reject(error)
         }
 
@@ -264,14 +274,19 @@ console.log('Compression worker ready');
       try {
         // Get or create worker
         const worker = this.getAvailableWorker()
+        const cleanup = () => {
+          worker.removeEventListener('message', messageHandler)
+          worker.removeEventListener('error', errorHandler)
+          this.cleanupWorker(worker)
+        }
 
         // Setup message handler for this task
         const messageHandler = (e: MessageEvent) => {
           const { id, type, data } = e.data
 
           if (id === taskId) {
-            worker.removeEventListener('message', messageHandler)
             this.workerTasks.delete(taskId)
+            cleanup()
 
             if (type === 'result') {
               // Reconstruct blob from transferred data
@@ -283,7 +298,18 @@ console.log('Compression worker ready');
           }
         }
 
+        const errorHandler = (error: Event) => {
+          this.workerTasks.delete(taskId)
+          cleanup()
+          reject(
+            error instanceof ErrorEvent
+              ? error.error || new Error(error.message)
+              : new Error('Worker compression failed'),
+          )
+        }
+
         worker.addEventListener('message', messageHandler)
+        worker.addEventListener('error', errorHandler)
 
         // Send compression task to worker
         const fileData = {
@@ -331,18 +357,32 @@ console.log('Compression worker ready');
     })
     const workerUrl = URL.createObjectURL(blob)
     const worker = new Worker(workerUrl)
-
-    // Clean up URL after worker is created
-    worker.addEventListener('error', () => {
-      URL.revokeObjectURL(workerUrl)
-    })
+    this.workers.push(worker)
+    this.workerUrls.set(worker, workerUrl)
 
     return worker
   }
 
+  private cleanupWorker(worker: Worker): void {
+    this.workers = this.workers.filter(
+      (activeWorker) => activeWorker !== worker,
+    )
+    this.workerPool = this.workerPool.filter(
+      (pooledWorker) => pooledWorker !== worker,
+    )
+
+    const workerUrl = this.workerUrls.get(worker)
+    this.workerUrls.delete(worker)
+    worker.terminate()
+
+    if (workerUrl) {
+      URL.revokeObjectURL(workerUrl)
+    }
+  }
+
   // Clean up resources
   destroy(): void {
-    this.workers.forEach((worker) => worker.terminate())
+    this.workers.forEach((worker) => this.cleanupWorker(worker))
     this.workers = []
     this.workerTasks.clear()
   }
