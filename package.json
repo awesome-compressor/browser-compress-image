@@ -1,7 +1,7 @@
 {
   "name": "@awesome-compressor/browser-compress-image",
   "type": "module",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "packageManager": "pnpm@10.18.1",
   "description": "Browser image compression library with TypeScript support, multiple output types, and pluggable tool selection.",
   "author": {
