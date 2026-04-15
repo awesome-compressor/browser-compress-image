@@ -2,6 +2,8 @@
 
 这个文档展示了如何使用新的可配置压缩系统，只导入你需要的压缩工具，减少打包体积。
 
+> 注意：当前发布包的 `.`、`./tools`、`./conversion`、`./utils` 入口仍指向同一个根入口文件。注册 API 的主要价值是控制运行时使用哪些工具；是否能显著缩小 bundle，仍取决于你的 bundler 是否做了有效的 tree shaking 和 code splitting。
+
 ## 基本用法
 
 ### 1. 使用特定的压缩工具
@@ -110,7 +112,7 @@ globalToolRegistry.setToolPriority('png', ['canvas'])
 ### 最小化配置（只使用 Canvas）
 
 ```typescript
-// 文件大小: ~10KB (仅包含 Canvas 压缩)
+// 最小工具集合
 import { compressWithTools, registerCanvas } from 'browser-compress-image'
 
 registerCanvas()
@@ -121,7 +123,7 @@ const result = await compressWithTools(file, { quality: 0.8 })
 ### 中等配置（Canvas + CompressorJS）
 
 ```typescript
-// 文件大小: ~50KB (Canvas + CompressorJS)
+// 平衡工具集合
 import {
   compressWithTools,
   registerCanvas,
@@ -137,7 +139,7 @@ const result = await compressWithTools(file, { quality: 0.8 })
 ### 完整配置（所有工具）
 
 ```typescript
-// 文件大小: ~200KB+ (包含所有压缩工具)
+// 完整工具集合
 import { compressWithTools, registerAllTools } from 'browser-compress-image'
 
 registerAllTools()

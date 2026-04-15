@@ -16,27 +16,27 @@
 
 ## Product / Docs Alignment
 
-- [ ] Align README/package claims with the actual package contents.
+- [x] Align README/package claims with the actual package contents.
   - Files: `README.md`, `package.json`, `docs/*`
-  - Plan: remove or soften claims around zero dependencies, worker readiness, bundle size, and conversion completeness unless the code really supports them.
+  - Done: softened README/package/docs claims around dependencies, worker readiness, bundle-size promises, and packaging behavior.
 
-- [ ] Align versioning and release metadata.
+- [x] Align versioning and release metadata.
   - Files: `README.md`, `package.json`, release docs
-  - Plan: make changelog/version references consistent and document the current release state accurately.
+  - Done: updated README release/status text to reflect the current npm version and current feature readiness.
 
 ## Build / CI
 
-- [ ] Fix the CI size-check mismatch.
+- [x] Fix the CI size-check mismatch.
   - Files: `.github/workflows/ci.yml`, `package.json`
-  - Plan: add a real `size` script or remove the CI step until the bundle-size check is wired up.
+  - Done: removed the broken `pnpm size` CI step until a real bundle-size check is wired up.
 
-- [ ] Fix the publish script toolchain mismatch.
+- [x] Fix the publish script toolchain mismatch.
   - Files: `package.json`
-  - Plan: replace `nr build` with a declared tool/script, or add the missing dependency that provides `nr`.
+  - Done: replaced `nr build` with `pnpm build` so publish uses a declared repo script.
 
-- [ ] Revisit `sideEffects: false` versus eager singleton initialization.
+- [x] Revisit `sideEffects: false` versus eager singleton initialization.
   - Files: `package.json`, `src/index.ts`, `src/utils/compressionQueue.ts`, `src/utils/compressionWorker.ts`, `src/utils/memoryManager.ts`
-  - Plan: either defer singleton setup until first use, or remove the side-effect-free claim.
+  - Done: removed the side-effect-free package claim until singleton initialization is deferred.
 
 ## Conversion Follow-ups
 
