@@ -50,13 +50,13 @@
 
 ## Test Debt
 
-- [ ] Fix the browser-path test setup that passes `Promise<File>` as `File`.
+- [x] Fix the browser-path test setup that passes `Promise<File>` as `File`.
   - Files: `test/features.test.ts`
-  - Plan: await file creation in the browser branch and make the test exercise the intended path.
+  - Done: replaced the async canvas stub path with shared valid fixture files so the test now always passes real `File` objects.
 
-- [ ] Replace random-byte image fixtures with valid image samples where decoder behavior matters.
+- [x] Replace random-byte image fixtures with valid image samples where decoder behavior matters.
   - Files: `test/new-features.test.ts`, related helpers
-  - Plan: use small valid PNG/JPEG/GIF fixtures so adapter failures are caught by tests.
+  - Done: added shared JPEG/PNG/GIF/WebP fixture files and updated tests to use real image bytes instead of random buffers.
 
 - [ ] Add export smoke tests for the package entrypoints.
   - Files: test suite, possibly a tiny fixture package

@@ -1,40 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { compress } from '../src'
 import type { MultipleCompressResults } from '../src/types'
-
-// 创建测试图片文件
-function createTestImageFile(
-  type: string = 'image/jpeg',
-  size: number = 1024,
-): File {
-  // 创建一个简单的测试图片数据
-  const canvas = document.createElement('canvas')
-  canvas.width = 100
-  canvas.height = 100
-  const ctx = canvas.getContext('2d')!
-
-  // 绘制一个简单的图案
-  ctx.fillStyle = '#ff0000'
-  ctx.fillRect(0, 0, 50, 50)
-  ctx.fillStyle = '#00ff00'
-  ctx.fillRect(50, 0, 50, 50)
-  ctx.fillStyle = '#0000ff'
-  ctx.fillRect(0, 50, 50, 50)
-  ctx.fillStyle = '#ffff00'
-  ctx.fillRect(50, 50, 50, 50)
-
-  // 转换为 Blob
-  return new Promise<File>((resolve) => {
-    canvas.toBlob(
-      (blob) => {
-        const file = new File([blob!], 'test-image.jpg', { type })
-        resolve(file)
-      },
-      type,
-      0.9,
-    )
-  }) as any as File
-}
+import { createFixtureImageFile } from './image-fixtures'
 
 describe('新功能验证测试', () => {
   let testFile: File
@@ -42,19 +9,9 @@ describe('新功能验证测试', () => {
   let gifFile: File
 
   beforeAll(async () => {
-    // 在浏览器环境中模拟 canvas
-    if (typeof document === 'undefined') {
-      // Node.js 环境，创建模拟文件
-      const buffer = new ArrayBuffer(1024)
-      testFile = new File([buffer], 'test.jpg', { type: 'image/jpeg' })
-      pngFile = new File([buffer], 'test.png', { type: 'image/png' })
-      gifFile = new File([buffer], 'test.gif', { type: 'image/gif' })
-    } else {
-      // 浏览器环境，创建真实测试文件
-      testFile = createTestImageFile('image/jpeg')
-      pngFile = createTestImageFile('image/png')
-      gifFile = createTestImageFile('image/gif')
-    }
+    testFile = createFixtureImageFile('image/jpeg')
+    pngFile = createFixtureImageFile('image/png')
+    gifFile = createFixtureImageFile('image/gif')
   })
 
   describe('returnAllResults 功能测试', () => {

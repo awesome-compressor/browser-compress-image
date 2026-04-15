@@ -1,29 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { compress } from '../src'
 import type { MultipleCompressResults } from '../src/types'
-
-// 创建一个模拟的图片文件用于测试
-function createMockImageFile(
-  type: string = 'image/jpeg',
-  size: number = 1024,
-): File {
-  // 创建一个简单的测试数据，模拟图片文件
-  const buffer = new ArrayBuffer(size)
-  const view = new Uint8Array(buffer)
-
-  // 填充一些模拟的图片数据
-  for (let i = 0; i < size; i++) {
-    view[i] = Math.floor(Math.random() * 256)
-  }
-
-  return new File([buffer], `test.${type.split('/')[1]}`, { type })
-}
+import { createFixtureImageFile } from './image-fixtures'
 
 describe('新功能验证测试', () => {
-  const testFile = createMockImageFile('image/jpeg', 2048)
-  const pngFile = createMockImageFile('image/png', 1536)
-  const gifFile = createMockImageFile('image/gif', 1024)
-  const webpFile = createMockImageFile('image/webp', 1792)
+  const testFile = createFixtureImageFile('image/jpeg')
+  const pngFile = createFixtureImageFile('image/png')
+  const gifFile = createFixtureImageFile('image/gif')
+  const webpFile = createFixtureImageFile('image/webp')
 
   describe('returnAllResults 功能测试', () => {
     it('应该返回多结果对象结构', async () => {
