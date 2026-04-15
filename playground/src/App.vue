@@ -214,9 +214,7 @@ async function openComparePanel(item: ImageItem) {
 
   try {
     // 过滤出启用的工具配置
-    const enabledToolConfigs = toolConfigs.value.filter(
-      (config) => config.enabled && config.key.trim(),
-    )
+    const enabledToolConfigs = getEnabledToolConfigs()
 
     // 使用核心 API 获取所有工具结果
     const all = (await compress(item.file, {
@@ -453,11 +451,12 @@ function cancelAllUploads() {
 interface ToolConfig {
   name: string
   key: string
+  libURL?: string
   enabled: boolean
 }
 
 // 可用的工具选项
-const availableTools = ['tinypng']
+const availableTools = ['tinypng', 'browser-image-compression']
 
 // 工具配置数组
 const toolConfigs = ref<ToolConfig[]>([])
@@ -474,6 +473,20 @@ function openSettingsPanel() {
   if (appContainer) {
     appContainer.style.overflow = 'hidden' // 禁用页面滚动
   }
+}
+
+function isToolConfigConfigured(config: ToolConfig) {
+  if (config.name === 'tinypng')
+    return config.key.trim().length > 0
+  if (config.name === 'browser-image-compression')
+    return (config.libURL || '').trim().length > 0
+  return false
+}
+
+function getEnabledToolConfigs() {
+  return toolConfigs.value.filter(
+    (config) => config.enabled && isToolConfigConfigured(config),
+  )
 }
 
 // 关闭设置面板时，不保存临时配置的更改
@@ -498,6 +511,7 @@ function loadSettings() {
         {
           name: 'tinypng',
           key: '',
+          libURL: '',
           enabled: false,
         },
       ]
@@ -509,6 +523,7 @@ function loadSettings() {
       {
         name: 'tinypng',
         key: '',
+        libURL: '',
         enabled: false,
       },
     ]
@@ -545,6 +560,7 @@ function addToolConfig() {
     tempToolConfigs.value.push({
       name: availableTool,
       key: '',
+      libURL: '',
       enabled: false,
     })
   }
@@ -1424,9 +1440,7 @@ async function addNewImages(files: File[]) {
     }
 
     // 过滤出启用的工具配置
-    const enabledToolConfigs = toolConfigs.value.filter(
-      (config) => config.enabled && config.key.trim(),
-    )
+    const enabledToolConfigs = getEnabledToolConfigs()
 
     // 计算动态超时时间，移动端增加5倍
     const baseTimeout = Math.max(30000, files.length * 10000)
@@ -1588,9 +1602,7 @@ async function compressImage(item: ImageItem): Promise<void> {
     }
 
     // 过滤出启用的工具配置
-    const enabledToolConfigs = toolConfigs.value.filter(
-      (config) => config.enabled && config.key.trim(),
-    )
+    const enabledToolConfigs = getEnabledToolConfigs()
 
     // 使用增强的压缩函数，默认走队列 + 主线程压缩
     const compressedBlob = await compressEnhanced(item.file, {
@@ -3011,16 +3023,24 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   </el-icon>
                   <span class="tool-name">{{ config.name.toUpperCase() }}</span>
                   <el-tag
-                    :type="config.enabled && config.key ? 'success' : 'info'"
+                    :type="
+                      config.enabled && isToolConfigConfigured(config)
+                        ? 'success'
+                        : 'info'
+                    "
                     size="small"
                   >
-                    {{ config.enabled && config.key ? 'Enabled' : 'Disabled' }}
+                    {{
+                      config.enabled && isToolConfigConfigured(config)
+                        ? 'Enabled'
+                        : 'Disabled'
+                    }}
                   </el-tag>
                 </div>
                 <div class="tool-actions">
                   <el-switch
                     v-model="config.enabled"
-                    :disabled="!config.key.trim()"
+                    :disabled="!isToolConfigConfigured(config)"
                   />
                   <el-button
                     v-if="tempToolConfigs.length > 1"
@@ -3045,7 +3065,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   </el-select>
                 </el-form-item>
 
-                <el-form-item label="API Key">
+                <el-form-item v-if="config.name === 'tinypng'" label="API Key">
                   <el-input
                     v-model="config.key"
                     type="password"
@@ -3059,6 +3079,17 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                       </el-icon>
                     </template>
                   </el-input>
+                </el-form-item>
+
+                <el-form-item
+                  v-if="config.name === 'browser-image-compression'"
+                  label="Library URL"
+                >
+                  <el-input
+                    v-model="config.libURL"
+                    placeholder="Enter a self-hosted browser-image-compression URL"
+                    clearable
+                  />
                 </el-form-item>
 
                 <div v-if="config.name === 'tinypng'" class="tool-help">
@@ -3075,6 +3106,22 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                   </p>
                   <p class="help-note">
                     💡 Free tier: 500 compressions per month
+                  </p>
+                </div>
+
+                <div
+                  v-if="config.name === 'browser-image-compression'"
+                  class="tool-help"
+                >
+                  <p class="help-text">
+                    <strong>Library URL:</strong>
+                    Use a self-hosted
+                    <code>browser-image-compression.js</code>
+                    file for offline or air-gapped environments.
+                  </p>
+                  <p class="help-note">
+                    Example:
+                    <code>/vendor/browser-image-compression.js</code>
                   </p>
                 </div>
               </div>
@@ -3099,6 +3146,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
             <p>
               • <strong>TinyPNG:</strong> Online service with excellent
               compression for PNG, JPEG, and WebP files
+            </p>
+            <p>
+              • <strong>Browser Image Compression:</strong> Optional self-hosted
+              worker script URL for offline or internal deployments
             </p>
             <p>
               • When enabled, configured tools will be included in the

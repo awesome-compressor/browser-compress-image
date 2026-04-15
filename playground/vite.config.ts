@@ -7,6 +7,11 @@ import AutoImport from 'unplugin-auto-import/vite'
 import { defineConfig } from 'vite'
 import Pages from 'vite-plugin-pages'
 
+const createAutoImport = AutoImport as unknown as (options: {
+  imports: string[]
+  dts: boolean
+}) => any
+
 export default defineConfig({
   base: './',
   resolve: {
@@ -20,10 +25,10 @@ export default defineConfig({
     Pages(),
 
     // https://github.com/antfu/unplugin-auto-import
-    AutoImport({
+    createAutoImport({
       imports: ['vue', 'vue-router', '@vueuse/core'],
       dts: true,
-    }) as any,
+    }),
 
     // PWA support with offline caching and WASM precache
     VitePWA({

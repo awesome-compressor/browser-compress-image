@@ -73,6 +73,42 @@ describe('adapter regressions', () => {
     ).rejects.toThrow('JSQuash requires a browser environment')
   })
 
+  it('forwards browser-image-compression libURL from toolConfigs', async () => {
+    const imageCompression = vi
+      .fn()
+      .mockResolvedValue(new Blob(['x'], { type: 'image/jpeg' }))
+
+    const toolRegistry = new ToolRegistry()
+    toolRegistry.registerTool(
+      'browser-image-compression',
+      imageCompression,
+      ['jpeg'],
+    )
+
+    const file = new File(['x'.repeat(1000)], 'test.jpg', {
+      type: 'image/jpeg',
+    })
+
+    await compressWithTools(file, {
+      quality: 0.8,
+      mode: 'keepSize',
+      toolRegistry,
+      toolConfigs: [
+        {
+          name: 'browser-image-compression',
+          libURL: '/vendor/browser-image-compression.js',
+        },
+      ],
+    })
+
+    expect(imageCompression).toHaveBeenCalledWith(
+      file,
+      expect.objectContaining({
+        libURL: '/vendor/browser-image-compression.js',
+      }),
+    )
+  })
+
   it('passes a finite resize bound to browser-image-compression for one-sided resize', async () => {
     stubImageDimensions(400, 200)
 

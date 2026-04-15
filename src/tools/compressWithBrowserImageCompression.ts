@@ -1,6 +1,11 @@
 import imageCompression, { Options } from 'browser-image-compression'
 import { hasResizeOptions, resolveResizeDimensions } from '../utils/resize'
 
+const runImageCompression = imageCompression as unknown as (
+  file: File,
+  options: Options,
+) => Promise<File>
+
 // browser-image-compression 工具
 export default async function compressWithBrowserImageCompression(
   file: File,
@@ -12,6 +17,7 @@ export default async function compressWithBrowserImageCompression(
     maxWidth?: number
     maxHeight?: number
     preserveExif?: boolean
+    libURL?: string
   },
 ): Promise<Blob> {
   const {
@@ -22,6 +28,7 @@ export default async function compressWithBrowserImageCompression(
     maxWidth,
     maxHeight,
     preserveExif = false,
+    libURL,
   } = options
 
   let maxWidthOrHeight: number | undefined
@@ -54,9 +61,10 @@ export default async function compressWithBrowserImageCompression(
     preserveExif: preserveExif,
     maxSizeMB: (file.size * 0.8) / (1024 * 1024), // 设置为原始文件大小的 MB
     maxWidthOrHeight,
+    libURL,
   }
 
-  const compressedBlob = await imageCompression(file, compressionOptions)
+  const compressedBlob = await runImageCompression(file, compressionOptions)
 
   // 如果压缩后文件大于或接近原文件大小，返回原文件
   // 使用 98% 阈值，避免微小的压缩效果

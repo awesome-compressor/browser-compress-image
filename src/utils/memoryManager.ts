@@ -345,7 +345,6 @@ export const memoryManager = MemoryManager.getInstance()
 // Utility function to check memory before large operations
 export function checkMemoryBeforeOperation(fileSize: number = 0): boolean {
   const manager = memoryManager
-  const stats = manager.getMemoryStats()
 
   // Check if memory is already critical
   if (manager.isMemoryCritical()) {

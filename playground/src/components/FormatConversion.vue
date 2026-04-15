@@ -522,6 +522,7 @@ interface Props {
   toolConfigs: Array<{
     name: string
     key: string
+    libURL?: string
     enabled: boolean
   }>
   preserveExif: boolean
@@ -541,6 +542,14 @@ const conversionResults = ref<ConversionCompareItemWithUrl[]>([])
 let conversionObjectUrls: string[] = []
 const originalImageUrl = ref('')
 const selectedTargetFormat = ref<TargetFormat>('webp')
+
+function isToolConfigConfigured(config: Props['toolConfigs'][number]) {
+  if (config.name === 'tinypng')
+    return config.key.trim().length > 0
+  if (config.name === 'browser-image-compression')
+    return (config.libURL || '').trim().length > 0
+  return false
+}
 
 // 格式选项配置
 const formatOptions = [
@@ -881,7 +890,7 @@ async function openConversionPanel(item: {
   try {
     // 过滤出启用的工具配置
     const enabledToolConfigs = props.toolConfigs.filter(
-      (config) => config.enabled && config.key.trim(),
+      (config) => config.enabled && isToolConfigConfigured(config),
     )
 
     // 构建转换对比数据
