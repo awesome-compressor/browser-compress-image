@@ -21,12 +21,16 @@ const IMAGE_FIXTURES = {
   },
 } as const
 
-function decodeBase64(base64: string): Uint8Array {
+function decodeBase64(base64: string): ArrayBuffer {
+  let bytes: Uint8Array
+
   if (typeof atob === 'function') {
-    return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+    bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+  } else {
+    bytes = Uint8Array.from(Buffer.from(base64, 'base64'))
   }
 
-  return Uint8Array.from(Buffer.from(base64, 'base64'))
+  return new Uint8Array(bytes).buffer
 }
 
 export function createFixtureImageFile(

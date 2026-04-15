@@ -72,7 +72,7 @@
     "play": "pnpm run -C playground dev",
     "dev": "pnpm run -C playground dev",
     "play:build": "pnpm run -C playground build",
-    "lint": "prettier --cache --write .",
+    "lint": "git ls-files -z | xargs -0 prettier --write --ignore-unknown",
     "test": "vitest --dir test -u",
     "test:ci": "vitest --dir test -u",
     "ptest": "pnpm run -C playground test -u",
