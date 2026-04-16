@@ -47,6 +47,7 @@ import {
 import CropPage from './CropPage.vue'
 import FormatConversion from './components/FormatConversion.vue'
 import { debounce } from './utils'
+import { createSvgFileFromClipboardText } from './utils/svgClipboard'
 import 'img-comparison-slider/dist/styles.css'
 
 // 导入 img-comparison-slider
@@ -1226,8 +1227,26 @@ async function handlePaste(e: ClipboardEvent) {
     )
 
     if (imageFiles.length === 0) {
-      console.log('剪贴板中没有找到支持的图片文件')
-      return // 静默处理，不显示错误消息
+      const svgFile =
+        createSvgFileFromClipboardText(
+          e.clipboardData?.getData('text/plain') || '',
+        )
+        || createSvgFileFromClipboardText(
+          e.clipboardData?.getData('text/html') || '',
+        )
+
+      if (!svgFile) {
+        console.log('剪贴板中没有找到支持的图片文件或 SVG 代码')
+        return // 静默处理，不显示错误消息
+      }
+
+      await addNewImages([svgFile])
+
+      ElMessage({
+        message: 'Successfully pasted SVG code',
+        type: 'success',
+      })
+      return
     }
 
     await addNewImages(imageFiles)
@@ -2318,7 +2337,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
         <div class="drag-text">Drop images or folders here</div>
         <div class="drag-subtitle">
           Support multiple images and folder drag & drop • Or use Ctrl+V to
-          paste
+          paste images or SVG code
         </div>
       </div>
     </div>
@@ -2387,10 +2406,12 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
           <el-icon class="upload-icon">
             <Picture />
           </el-icon>
-          <span class="upload-text">Drop, Paste or Click to Upload Images</span>
+          <span class="upload-text"
+            >Drop, Paste or Click to Upload Images</span
+          >
           <span class="upload-hint">
             Support PNG, JPG, JPEG, GIF, WebP, SVG formats • Multiple files &
-            folders supported • Use Ctrl+V to paste images
+            folders supported • Use Ctrl+V to paste images or raw SVG code
           </span>
         </button>
       </section>
