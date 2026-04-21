@@ -9,17 +9,32 @@ const wasmLoadPromises = new Map<OutputType, Promise<void>>()
 interface WasmConfig {
   baseUrl?: string // 本地WASM文件的基础URL
   useLocal?: boolean // 是否优先使用本地WASM文件
+  allowCdnFallback?: boolean // 本地加载失败时是否允许回退到 CDN
 }
 
-// 默认配置
-let wasmConfig: WasmConfig = {
+import { getCompressionDeploymentConfig } from '../deployment'
+
+const defaultWasmConfig: Required<WasmConfig> = {
   baseUrl: '/wasm/', // 默认本地WASM文件路径
   useLocal: false,
+  allowCdnFallback: true,
 }
+
+// 显式覆盖配置
+let wasmConfig: WasmConfig = {}
 
 // 配置WASM加载选项
 export function configureWasmLoading(config: WasmConfig): void {
   wasmConfig = { ...wasmConfig, ...config }
+}
+
+function getResolvedWasmConfig(): Required<WasmConfig> {
+  const deploymentWasmConfig = getCompressionDeploymentConfig().wasm
+  return {
+    ...defaultWasmConfig,
+    ...deploymentWasmConfig,
+    ...wasmConfig,
+  }
 }
 
 // WASM文件映射
@@ -74,11 +89,15 @@ export async function ensureWasmLoaded(format: OutputType): Promise<void> {
   const loadPromise = (async () => {
     try {
       // 如果配置为使用本地WASM文件，先尝试本地加载
-      if (wasmConfig.useLocal) {
+      const resolvedWasmConfig = getResolvedWasmConfig()
+      if (resolvedWasmConfig.useLocal) {
         try {
           await loadLocalWasm(format)
           return
         } catch (localError) {
+          if (!resolvedWasmConfig.allowCdnFallback) {
+            throw localError
+          }
           logger.warn(
             `Local WASM loading failed for ${format}, falling back to CDN:`,
             localError,
@@ -215,11 +234,12 @@ export async function downloadWasmFiles(
 // 简化的本地WASM加载（使用Service Worker缓存策略）
 async function loadLocalWasm(format: OutputType): Promise<void> {
   // 检查是否有Service Worker支持
-  if ('serviceWorker' in navigator) {
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     // 尝试通过Service Worker缓存的方式加载
     const cacheName = 'jsquash-wasm-cache'
     const wasmFileName = wasmFiles[format]
-    const localUrl = `${wasmConfig.baseUrl}${wasmFileName}`
+    const resolvedWasmConfig = getResolvedWasmConfig()
+    const localUrl = `${resolvedWasmConfig.baseUrl}${wasmFileName}`
 
     try {
       // 检查缓存中是否有WASM文件
@@ -237,7 +257,8 @@ async function loadLocalWasm(format: OutputType): Promise<void> {
   }
 
   // 回退：直接尝试从本地路径加载
-  const localUrl = `${wasmConfig.baseUrl}${wasmFiles[format]}`
+  const resolvedWasmConfig = getResolvedWasmConfig()
+  const localUrl = `${resolvedWasmConfig.baseUrl}${wasmFiles[format]}`
   const response = await fetch(localUrl)
 
   if (!response.ok) {

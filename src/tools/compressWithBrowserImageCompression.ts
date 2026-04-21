@@ -1,4 +1,5 @@
 import imageCompression, { Options } from 'browser-image-compression'
+import { getBrowserImageCompressionLibURL } from '../deployment'
 import { hasResizeOptions, resolveResizeDimensions } from '../utils/resize'
 
 const runImageCompression = imageCompression as unknown as (
@@ -30,6 +31,7 @@ export default async function compressWithBrowserImageCompression(
     preserveExif = false,
     libURL,
   } = options
+  const resolvedLibURL = libURL || getBrowserImageCompressionLibURL()
 
   let maxWidthOrHeight: number | undefined
 
@@ -61,7 +63,7 @@ export default async function compressWithBrowserImageCompression(
     preserveExif: preserveExif,
     maxSizeMB: (file.size * 0.8) / (1024 * 1024), // 设置为原始文件大小的 MB
     maxWidthOrHeight,
-    libURL,
+    libURL: resolvedLibURL,
   }
 
   const compressedBlob = await runImageCompression(file, compressionOptions)

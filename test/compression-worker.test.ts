@@ -129,7 +129,7 @@ afterEach(() => {
 })
 
 describe('compressionWorkerManager', () => {
-  it('does not mark workers supported when init returns initialized=false', async () => {
+  it('[WORKER-002] does not mark workers supported when init returns initialized=false', async () => {
     const url = stubWorkerProbe({
       type: 'result',
       data: { initialized: false },
@@ -147,7 +147,7 @@ describe('compressionWorkerManager', () => {
     expect(url.terminate).toHaveBeenCalledTimes(1)
   })
 
-  it('marks workers supported only when init confirms initialized=true', async () => {
+  it('[WORKER-002] marks workers supported only when init confirms initialized=true', async () => {
     const url = stubWorkerProbe({
       type: 'result',
       data: { initialized: true },
@@ -163,6 +163,19 @@ describe('compressionWorkerManager', () => {
     expect(url.createObjectURL).toHaveBeenCalledTimes(1)
     expect(url.revokeObjectURL).toHaveBeenCalledTimes(1)
     expect(url.terminate).toHaveBeenCalledTimes(1)
+  })
+
+  it('[WORKER-001][WORKER-002] waitForCompressionInitialization resolves even when worker support is unavailable', async () => {
+    stubWorkerProbe({
+      type: 'result',
+      data: { initialized: false },
+    })
+
+    const { getCompressionStats, waitForCompressionInitialization } =
+      await import('../src/compressEnhanced')
+
+    await expect(waitForCompressionInitialization()).resolves.toBeUndefined()
+    expect(getCompressionStats().worker.supported).toBe(false)
   })
 
   it('cleans up the worker and blob URL after a successful compression task', async () => {

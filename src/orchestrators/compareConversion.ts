@@ -2,6 +2,11 @@ import { compress } from '../compress'
 import type { CompressOptions } from '../types'
 import { convertImage, type ImageConvertOptions } from '../conversion'
 import type { CompressResultType } from '../types'
+import {
+  assessQuality,
+  type QualityOptions,
+  type QualityResult,
+} from '../utils/imageQuality'
 
 export interface ConversionCompareItemMeta {
   flow: 'C→T' | 'T' | 'T→C' // 压缩→转换 | 仅转换 | 转换→压缩
@@ -17,18 +22,80 @@ export interface ConversionCompareItem {
   error?: string
   size?: number
   compressionRatio?: number // 相对"原图"
+  evaluationRatio?: number // 相对评估基线
+  evaluationLabel?: string
+  qualityMetrics?: QualityResult
   duration?: number
+}
+
+export interface ConversionEvaluationOptions extends QualityOptions {
+  baseline?: Blob | File
+  label?: string
+  includeQualityMetrics?: boolean
 }
 
 export interface BuildConversionColumnInput {
   file: File
   compressOptions?: CompressOptions & { returnAllResults: true }
   convertOptions: ImageConvertOptions
+  evaluation?: ConversionEvaluationOptions
 }
 
 export interface ConversionColumnResult {
   title: string // 如 "Format: webp"
   items: ConversionCompareItem[]
+}
+
+interface ConversionEvaluationContext {
+  baseline: Blob | File
+  label: string
+  includeQualityMetrics: boolean
+  maxDimension?: number
+  includeHeatmap?: boolean
+}
+
+function getEvaluationContext(
+  input: BuildConversionColumnInput,
+): ConversionEvaluationContext {
+  return {
+    baseline: input.evaluation?.baseline || input.file,
+    label:
+      input.evaluation?.label ||
+      (input.evaluation?.baseline ? 'baseline' : 'original'),
+    includeQualityMetrics: input.evaluation?.includeQualityMetrics || false,
+    maxDimension: input.evaluation?.maxDimension,
+    includeHeatmap: input.evaluation?.includeHeatmap,
+  }
+}
+
+async function finalizeEvaluation(
+  item: ConversionCompareItem,
+  file: File,
+  evaluation: ConversionEvaluationContext,
+): Promise<ConversionCompareItem> {
+  if (!item.success || !item.blob || typeof item.size !== 'number') {
+    return item
+  }
+
+  const nextItem: ConversionCompareItem = {
+    ...item,
+    compressionRatio: ((file.size - item.size) / file.size) * 100,
+    evaluationRatio:
+      ((evaluation.baseline.size - item.size) / evaluation.baseline.size) * 100,
+    evaluationLabel: evaluation.label,
+  }
+
+  if (!evaluation.includeQualityMetrics) {
+    return nextItem
+  }
+
+  return {
+    ...nextItem,
+    qualityMetrics: await assessQuality(evaluation.baseline, item.blob, {
+      maxDimension: evaluation.maxDimension,
+      includeHeatmap: evaluation.includeHeatmap,
+    }),
+  }
 }
 
 // Helper function to get tools for target format (currently unused)
@@ -49,6 +116,7 @@ export async function buildConversionColumn(
 ): Promise<ConversionColumnResult> {
   const { file, compressOptions, convertOptions } = input
   const { targetFormat } = convertOptions
+  const evaluation = getEvaluationContext(input)
 
   const items: ConversionCompareItem[] = []
 
@@ -75,20 +143,22 @@ export async function buildConversionColumn(
                   convertOptions,
                 )
 
-                return {
-                  meta: {
-                    flow: 'C→T' as const,
-                    tool: result.tool,
-                    compressOptions,
-                    convertOptions,
+                return finalizeEvaluation(
+                  {
+                    meta: {
+                      flow: 'C→T' as const,
+                      tool: result.tool,
+                      compressOptions,
+                      convertOptions,
+                    },
+                    blob: convertResult.blob,
+                    success: true,
+                    size: convertResult.blob.size,
+                    duration: result.duration + convertResult.duration,
                   },
-                  blob: convertResult.blob,
-                  success: true,
-                  size: convertResult.blob.size,
-                  compressionRatio:
-                    ((file.size - convertResult.blob.size) / file.size) * 100,
-                  duration: result.duration + convertResult.duration,
-                } as ConversionCompareItem
+                  file,
+                  evaluation,
+                )
               } catch (error) {
                 return {
                   meta: {
@@ -118,18 +188,20 @@ export async function buildConversionColumn(
           const convertResult = await convertImage(file, convertOptions)
           const duration = performance.now() - startTime
 
-          return {
-            meta: {
-              flow: 'T' as const,
-              convertOptions,
+          return finalizeEvaluation(
+            {
+              meta: {
+                flow: 'T' as const,
+                convertOptions,
+              },
+              blob: convertResult.blob,
+              success: true,
+              size: convertResult.blob.size,
+              duration,
             },
-            blob: convertResult.blob,
-            success: true,
-            size: convertResult.blob.size,
-            compressionRatio:
-              ((file.size - convertResult.blob.size) / file.size) * 100,
-            duration,
-          } as ConversionCompareItem
+            file,
+            evaluation,
+          )
         } catch (error) {
           const duration = performance.now() - startTime
 
@@ -187,20 +259,22 @@ export async function buildConversionColumn(
 
             const totalDuration = performance.now() - startTime
 
-            return {
-              meta: {
-                flow: 'T→C' as const,
-                tool: bestResult.tool,
-                compressOptions,
-                convertOptions,
+            return finalizeEvaluation(
+              {
+                meta: {
+                  flow: 'T→C' as const,
+                  tool: bestResult.tool,
+                  compressOptions,
+                  convertOptions,
+                },
+                blob: bestResult.result as Blob,
+                success: true,
+                size: bestResult.compressedSize,
+                duration: totalDuration,
               },
-              blob: bestResult.result as Blob,
-              success: true,
-              size: bestResult.compressedSize,
-              compressionRatio:
-                ((file.size - bestResult.compressedSize) / file.size) * 100,
-              duration: totalDuration,
-            } as ConversionCompareItem
+              file,
+              evaluation,
+            )
           } catch (error) {
             const duration = performance.now() - startTime
 

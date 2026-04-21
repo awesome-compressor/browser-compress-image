@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -34,7 +36,18 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Check generated docs
+        run: pnpm docs:check
+
+      - name: Check PR contract sync
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node ./scripts/check-pr-contracts.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.event.pull_request.head.sha }}"
+
       - name: Run unit tests
         run: pnpm test
       - name: Build package
         run: pnpm build
+      - name: Check package contract
+        run: pnpm package:check

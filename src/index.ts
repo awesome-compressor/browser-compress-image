@@ -1,10 +1,16 @@
 // 主要的压缩函数 - 保持向后兼容
-export { compress, compressWithStats } from './compress'
+export { compress, compressDecision, compressWithStats } from './compress'
 // ...type exports consolidated below
+
+export {
+  configureCompressionDeployment,
+  getCompressionDeploymentConfig,
+} from './deployment'
 
 // Enhanced compression with queue and worker support (NEW)
 export {
   clearCompressionQueue,
+  compressJob,
   compressEnhanced,
   compressEnhancedBatch,
   configureCompression,
@@ -61,6 +67,12 @@ export { default as logger, setLogger, resetLogger } from './utils/logger'
 
 // Image preprocessing
 export { preprocessImage } from './utils/preprocessImage'
+export {
+  assessQuality,
+  computePSNR,
+  computeSSIM,
+  generateDifferenceHeatmap,
+} from './utils/imageQuality'
 
 // Image conversion (including SVG support)
 export {
@@ -76,6 +88,7 @@ export type {
   ImageConvertOptions,
   ImageConvertResult,
 } from './conversion'
+export { buildConversionColumn } from './orchestrators/compareConversion'
 
 // JSQuash WASM helpers (for PWA warm-up and diagnostics)
 export {
@@ -86,8 +99,18 @@ export {
 } from './tools/compressWithJsquash'
 
 // Centralized type-only exports for clarity
-export type { CompressionStats } from './compress'
-export type { EnhancedCompressOptions } from './compressEnhanced'
+export type { CompressionDecisionResult, CompressionStats } from './compress'
+export type {
+  CompressionDeploymentConfig,
+  CompressionDeploymentMode,
+  ResolvedCompressionDeploymentConfig,
+} from './deployment'
+export type {
+  CompressionJob,
+  CompressionJobMetrics,
+  CompressionJobStage,
+  EnhancedCompressOptions,
+} from './compressEnhanced'
 export type {
   CompressorFunction,
   CompressorTool,
@@ -97,3 +120,11 @@ export type { CompressionTask, QueueStats } from './utils/compressionQueue'
 export type { WorkerMessage, WorkerTask } from './utils/compressionWorker'
 export type { MemoryStats, MemoryThresholds } from './utils/memoryManager'
 export type { PreprocessOptions, CropRect, ResizeOptions } from './types'
+export type { QualityOptions, QualityResult } from './utils/imageQuality'
+export type {
+  BuildConversionColumnInput,
+  ConversionColumnResult,
+  ConversionCompareItem,
+  ConversionCompareItemMeta,
+  ConversionEvaluationOptions,
+} from './orchestrators/compareConversion'

@@ -5,12 +5,21 @@ import type {
   MultipleCompressResults,
   CompressResultItem,
   ToolConfig,
+  CompressionOutputDecision,
+  CompressionObjectiveDecision,
 } from './types'
 import type { CompressorTool } from './compressWithTools'
 import convertBlobToType from './convertBlobToType'
+import {
+  canUseNetworkTool,
+  filterDeploymentBlockedTools,
+  mergeDeploymentToolConfigs,
+} from './deployment'
 import { LRUCache } from './utils/lruCache'
 import logger from './utils/logger'
 import { runWithAbortAndTimeout } from './utils/abort'
+import { searchObjectiveCompression } from './objectiveCompression'
+import { resolveCompressionOutput } from './outputFormat'
 // 注意：这里不再直接导入所有工具，而是动态导入
 
 // 动态导入压缩工具的辅助函数
@@ -99,6 +108,7 @@ async function createCacheKey(
     maxWidth?: number
     maxHeight?: number
     preserveExif: boolean
+    output?: CompressOptions['output']
     toolConfigs: ToolConfig[]
   },
 ): Promise<string> {
@@ -108,7 +118,7 @@ async function createCacheKey(
     byte.toString(16).padStart(2, '0'),
   ).join('')
 
-  return `hash=${hash}:type=${file.type}:q=${options.quality}:m=${options.mode}:tw=${options.targetWidth || ''}:th=${options.targetHeight || ''}:mw=${options.maxWidth || ''}:mh=${options.maxHeight || ''}:preserveExif=${options.preserveExif}:cfg=${JSON.stringify(
+  return `hash=${hash}:type=${file.type}:q=${options.quality}:m=${options.mode}:tw=${options.targetWidth || ''}:th=${options.targetHeight || ''}:mw=${options.maxWidth || ''}:mh=${options.maxHeight || ''}:preserveExif=${options.preserveExif}:output=${options.output || 'preserve'}:cfg=${JSON.stringify(
     options.toolConfigs,
   )}`
 }
@@ -172,10 +182,13 @@ export async function compress<T extends CompressResultType = 'blob'>(
     preserveExif = false,
     returnAllResults = false,
     type: resultType = 'blob' as T,
+    output = 'preserve',
+    objective,
     toolConfigs = [],
     signal,
     timeoutMs,
   } = options
+  const effectiveToolConfigs = mergeDeploymentToolConfigs(toolConfigs)
 
   // 使用多工具压缩比对策略
   const compressionOptions = {
@@ -186,7 +199,7 @@ export async function compress<T extends CompressResultType = 'blob'>(
     maxWidth,
     maxHeight,
     preserveExif,
-    toolConfigs,
+    toolConfigs: effectiveToolConfigs,
     signal,
     timeoutMs,
   }
@@ -204,7 +217,8 @@ export async function compress<T extends CompressResultType = 'blob'>(
         maxWidth,
         maxHeight,
         preserveExif,
-        toolConfigs,
+        output,
+        toolConfigs: effectiveToolConfigs,
       })
 
       const cached = compressResultCache.get(cacheKey)
@@ -229,14 +243,73 @@ export async function compress<T extends CompressResultType = 'blob'>(
           : toolsCollections['others']
 
   // 如果在 toolConfigs 中配置了 TinyPNG，则添加到工具列表中
-  const hasTinyPngConfig = toolConfigs.some(
+  const hasTinyPngConfig = effectiveToolConfigs.some(
     (config) => config.name === 'tinypng',
   )
   if (
+    canUseNetworkTool('tinypng') &&
     hasTinyPngConfig &&
     ['png', 'webp', 'jpeg', 'jpg'].some((type) => file.type.includes(type))
   ) {
     tools = [...tools, 'tinypng']
+  }
+  tools = filterDeploymentBlockedTools(tools)
+
+  const resolvedOutput = objective?.output ?? output
+
+  if (objective) {
+    const { selected, selectedQuality, decision } =
+      await searchObjectiveCompression({
+        objective: {
+          ...objective,
+          goal: objective.goal || 'balanced',
+          output: resolvedOutput,
+        },
+        runCandidate: async (candidateQuality) => {
+          const result = await compressWithMultipleToolsAndReturnAll(
+            file,
+            {
+              ...compressionOptions,
+              quality: candidateQuality,
+            },
+            tools,
+            'blob',
+            resolvedOutput,
+          )
+
+          return {
+            result,
+            blob: result.bestResult as Blob,
+            compressedSize: (result.bestResult as Blob).size,
+            bestTool: result.bestTool,
+            outputDecision: result.outputDecision,
+          }
+        },
+      })
+
+    if (returnAllResults) {
+      const finalResult = await compressWithMultipleToolsAndReturnAll(
+        file,
+        {
+          ...compressionOptions,
+          quality: selectedQuality,
+        },
+        tools,
+        resultType,
+        resolvedOutput,
+      )
+
+      return {
+        ...finalResult,
+        objectiveDecision: decision,
+      }
+    }
+
+    return convertBlobToType(
+      selected.result.bestResult as Blob,
+      resultType,
+      file.name,
+    )
   }
 
   // 如果需要返回所有结果
@@ -246,6 +319,7 @@ export async function compress<T extends CompressResultType = 'blob'>(
       compressionOptions,
       tools,
       resultType,
+      resolvedOutput,
     )
   }
 
@@ -255,17 +329,26 @@ export async function compress<T extends CompressResultType = 'blob'>(
     compressionOptions,
     tools,
   )
+  const { blob: finalResult } = await resolveCompressionOutput(
+    file,
+    bestResult,
+    {
+      output: resolvedOutput,
+      quality,
+      preserveExif,
+    },
+  )
 
   // 将结果存入缓存（仅缓存单结果路径）
   if (cacheKey) {
     try {
-      compressResultCache.set(cacheKey, bestResult)
+      compressResultCache.set(cacheKey, finalResult)
     } catch (e) {
       logger.warn('Failed to cache compress result', e)
     }
   }
 
-  return convertBlobToType(bestResult, resultType, file.name)
+  return convertBlobToType(finalResult, resultType, file.name)
 }
 
 // 多工具压缩比对核心函数
@@ -279,6 +362,7 @@ async function compressWithMultipleTools(
     maxWidth?: number
     maxHeight?: number
     preserveExif?: boolean
+    output?: CompressOptions['output']
     toolConfigs?: ToolConfig[]
     signal?: AbortSignal
     timeoutMs?: number
@@ -443,12 +527,14 @@ async function compressWithMultipleToolsAndReturnAll<
     maxWidth?: number
     maxHeight?: number
     preserveExif?: boolean
+    output?: CompressOptions['output']
     toolConfigs?: ToolConfig[]
     signal?: AbortSignal
     timeoutMs?: number
   },
   tools: CompressorTool[],
   resultType: T,
+  output: CompressOptions['output'],
 ): Promise<MultipleCompressResults<T>> {
   const totalStartTime = performance.now()
 
@@ -590,8 +676,15 @@ async function compressWithMultipleToolsAndReturnAll<
     }
   }
 
+  const { blob: formattedBestBlob, decision: outputDecision } =
+    await resolveCompressionOutput(file, bestAttempt.blob, {
+      output,
+      quality: options.quality,
+      preserveExif: options.preserveExif,
+      selectedTool: bestAttempt.tool,
+    })
   const bestResult = await convertBlobToType(
-    bestAttempt.blob,
+    formattedBestBlob,
     resultType,
     file.name,
   )
@@ -618,6 +711,7 @@ async function compressWithMultipleToolsAndReturnAll<
     bestTool: bestAttempt.tool,
     allResults,
     totalDuration,
+    outputDecision,
   }
 }
 
@@ -629,6 +723,8 @@ export interface CompressionStats {
   compressedSize: number
   compressionRatio: number
   totalDuration: number
+  outputDecision?: CompressionOutputDecision
+  objectiveDecision?: CompressionObjectiveDecision
   toolsUsed: {
     tool: string
     size: number
@@ -639,11 +735,108 @@ export interface CompressionStats {
   }[]
 }
 
+export interface CompressionDecisionResult<T extends CompressResultType> {
+  result: CompressResult<T>
+  bestTool: string
+  originalSize: number
+  compressedSize: number
+  compressionRatio: number
+  totalDuration: number
+  outputDecision?: CompressionOutputDecision
+  objectiveDecision?: CompressionObjectiveDecision
+  toolsUsed: CompressionStats['toolsUsed']
+}
+
+export async function compressDecision<T extends CompressResultType = 'blob'>(
+  file: File,
+  options: Omit<CompressOptions, 'returnAllResults'> & { type?: T },
+): Promise<CompressionDecisionResult<T>>
+
+export async function compressDecision<T extends CompressResultType = 'blob'>(
+  file: File,
+  quality?: number,
+  type?: T,
+): Promise<CompressionDecisionResult<T>>
+
+export async function compressDecision<T extends CompressResultType = 'blob'>(
+  file: File,
+  qualityOrOptions?:
+    | number
+    | (Omit<CompressOptions, 'returnAllResults'> & { type?: T }),
+  type?: T,
+): Promise<CompressionDecisionResult<T>> {
+  const options =
+    typeof qualityOrOptions === 'object'
+      ? qualityOrOptions
+      : {
+          quality: qualityOrOptions || 0.6,
+          mode: 'keepSize' as const,
+          type: type || ('blob' as T),
+        }
+
+  const { type: resultType = 'blob' as T, ...statsOptions } = options
+  const stats = await compressWithStats(file, statsOptions)
+  const result = await convertBlobToType(stats.compressedFile, resultType, file.name)
+
+  return {
+    result,
+    bestTool: stats.bestTool,
+    originalSize: stats.originalSize,
+    compressedSize: stats.compressedSize,
+    compressionRatio: stats.compressionRatio,
+    totalDuration: stats.totalDuration,
+    outputDecision: stats.outputDecision,
+    objectiveDecision: stats.objectiveDecision,
+    toolsUsed: stats.toolsUsed,
+  }
+}
+
 // 带详细统计信息的压缩函数
 export async function compressWithStats(
   file: File,
   qualityOrOptions?: number | CompressOptions,
 ): Promise<CompressionStats> {
+  if (typeof qualityOrOptions === 'object' && qualityOrOptions.objective) {
+    const { objective, output = 'preserve', ...restOptions } = qualityOrOptions
+    const resolvedOutput = objective.output ?? output
+
+    const { selected, decision } = await searchObjectiveCompression({
+      objective: {
+        ...objective,
+        goal: objective.goal || 'balanced',
+        output: resolvedOutput,
+      },
+      runCandidate: async (candidateQuality) => {
+        const result = await compressWithMultipleToolsWithStats(file, {
+          quality: candidateQuality,
+          mode: restOptions.mode || 'keepSize',
+          targetWidth: restOptions.targetWidth,
+          targetHeight: restOptions.targetHeight,
+          maxWidth: restOptions.maxWidth,
+          maxHeight: restOptions.maxHeight,
+          preserveExif: restOptions.preserveExif || false,
+          output: resolvedOutput,
+          toolConfigs: restOptions.toolConfigs || [],
+          signal: restOptions.signal,
+          timeoutMs: restOptions.timeoutMs,
+        })
+
+        return {
+          result,
+          blob: result.compressedFile,
+          compressedSize: result.compressedSize,
+          bestTool: result.bestTool,
+          outputDecision: result.outputDecision,
+        }
+      },
+    })
+
+    return {
+      ...selected.result,
+      objectiveDecision: decision,
+    }
+  }
+
   // 使用多工具压缩并返回详细统计
   return await compressWithMultipleToolsWithStats(file, {
     quality:
@@ -674,6 +867,10 @@ export async function compressWithStats(
       typeof qualityOrOptions === 'object'
         ? qualityOrOptions.preserveExif || false
         : false,
+    output:
+      typeof qualityOrOptions === 'object'
+        ? qualityOrOptions.output || 'preserve'
+        : 'preserve',
     toolConfigs:
       typeof qualityOrOptions === 'object'
         ? qualityOrOptions.toolConfigs || []
@@ -692,6 +889,7 @@ async function compressWithMultipleToolsWithStats(
     maxWidth?: number
     maxHeight?: number
     preserveExif?: boolean
+    output?: CompressOptions['output']
     toolConfigs?: ToolConfig[]
     signal?: AbortSignal
     timeoutMs?: number
@@ -811,14 +1009,22 @@ async function compressWithMultipleToolsWithStats(
 
   const totalEndTime = performance.now()
   const totalDuration = Math.round(totalEndTime - totalStartTime)
+  const { blob: formattedBlob, decision: outputDecision } =
+    await resolveCompressionOutput(file, bestAttempt.blob, {
+      output: options.output,
+      quality: options.quality,
+      preserveExif: options.preserveExif,
+      selectedTool: bestAttempt.tool,
+    })
 
   return {
     bestTool: bestAttempt.tool,
-    compressedFile: bestAttempt.blob,
+    compressedFile: formattedBlob,
     originalSize: file.size,
-    compressedSize: bestAttempt.size,
-    compressionRatio: ((file.size - bestAttempt.size) / file.size) * 100,
+    compressedSize: formattedBlob.size,
+    compressionRatio: ((file.size - formattedBlob.size) / file.size) * 100,
     totalDuration,
+    outputDecision,
     toolsUsed: attempts.map((attempt) => ({
       tool: attempt.tool,
       size: attempt.size,

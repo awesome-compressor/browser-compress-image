@@ -10,6 +10,34 @@ import { preprocessImage } from './utils/preprocessImage'
 import type { PreprocessOptions } from './types'
 import logger from './utils/logger'
 
+export type CompressionJobStage =
+  | 'queued'
+  | 'preprocessing'
+  | 'compressing'
+  | 'converting'
+  | 'done'
+  | 'failed'
+  | 'cancelled'
+
+export interface CompressionJobMetrics {
+  originalSize: number
+  compressedSize?: number
+  startedAt?: number
+  finishedAt?: number
+  durationMs?: number
+}
+
+export interface CompressionJob<T = Blob> {
+  id: string
+  readonly status: CompressionJobStage
+  promise: Promise<T>
+  cancel: () => void
+  retry: () => CompressionJob<T>
+  onProgress: (listener: (progress: number) => void) => () => void
+  onStageChange: (listener: (stage: CompressionJobStage) => void) => () => void
+  onMetrics: (listener: (metrics: CompressionJobMetrics) => void) => () => void
+}
+
 // Enhanced compression options with queue and worker support
 export interface EnhancedCompressOptions extends CompressOptions {
   /**
@@ -49,7 +77,7 @@ export interface EnhancedCompressOptions extends CompressOptions {
  */
 export async function compressEnhanced<T extends CompressResultType = 'blob'>(
   file: File,
-  options: EnhancedCompressOptions = {},
+  options: EnhancedCompressOptions & { type?: T } = {},
 ): Promise<CompressResult<T>> {
   const {
     useWorker = false,
@@ -66,76 +94,215 @@ export async function compressEnhanced<T extends CompressResultType = 'blob'>(
     throw new Error('Invalid file input')
   }
 
-  // If preprocessing is requested, apply on main thread first to get an interim Blob
-  let inputForCompression: File | Blob = file
-  if (preprocess) {
-    try {
-      // Map arbitrary file.type to supported union for preprocess output
-      let guessedOutType: 'image/png' | 'image/jpeg' | 'image/webp' =
-        'image/png'
-      if (preprocess.outputType) {
-        guessedOutType = preprocess.outputType
-      } else if (/jpe?g/i.test(file.type)) {
-        guessedOutType = 'image/jpeg'
-      } else if (/png/i.test(file.type)) {
-        guessedOutType = 'image/png'
-      } else if (/webp/i.test(file.type)) {
-        guessedOutType = 'image/webp'
-      }
-
-      const pre = await preprocessImage(file, {
-        ...preprocess,
-        // Prefer to keep the source mime within supported set; downstream tools can convert if needed
-        outputType: guessedOutType,
-      })
-      inputForCompression = pre.blob
-    } catch (e) {
-      logger.warn('Preprocess failed, fallback to original file:', e)
-    }
-  }
-
-  const compressionFile =
-    inputForCompression instanceof File
-      ? inputForCompression
-      : new File([inputForCompression], file.name, {
-          type: (inputForCompression as Blob).type,
-        })
-
-  // For single file compression, use direct compression if queue is disabled
-  if (!useQueue) {
-    return (await compressDirectly(
-      compressionFile,
-      compressOptions,
-      useWorker,
-      type,
-    )) as CompressResult<T>
-  }
-
-  // Use queue for concurrency control
-  const compressPromise = compressionQueue.compress(
-    compressionFile,
-    {
-      ...compressOptions,
-      useWorker,
-      type: 'blob', // Always get blob from queue, convert later if needed
-    },
+  const compressionFile = await prepareCompressionFile(file, preprocess)
+  const blob = await runBlobCompression(compressionFile, compressOptions, {
+    useQueue,
     priority,
-    (queuedFile, queuedOptions) =>
-      compressBlob(queuedFile, queuedOptions, useWorker),
-  )
-
-  // Add timeout wrapper
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error(`Compression timeout after ${timeout}ms`))
-    }, timeout)
+    timeout,
+    useWorker,
   })
 
   try {
-    const blob = await Promise.race([compressPromise, timeoutPromise])
-    return (await convertBlobToType(blob, type)) as CompressResult<T>
+    return (await convertBlobToType(blob, type, file.name)) as CompressResult<T>
   } catch (error) {
     throw error instanceof Error ? error : new Error('Compression failed')
+  }
+}
+
+export function compressJob<T extends CompressResultType = 'blob'>(
+  file: File,
+  options: EnhancedCompressOptions & { type?: T } = {},
+): CompressionJob<CompressResult<T>> {
+  if (!file || !(file instanceof File)) {
+    throw new Error('Invalid file input')
+  }
+
+  const {
+    useWorker = false,
+    useQueue = true,
+    priority,
+    timeout = 30000,
+    type = 'blob' as T,
+    preprocess,
+    signal: externalSignal,
+    ...compressOptions
+  } = options
+
+  const jobId = createCompressionJobId(file)
+  const startedAt = Date.now()
+  const abortController = new AbortController()
+  const initialStage: CompressionJobStage = preprocess
+    ? 'preprocessing'
+    : useQueue
+      ? 'queued'
+      : 'compressing'
+
+  let status: CompressionJobStage = initialStage
+  let progress = getProgressForStage(initialStage, 0)
+  let metrics: CompressionJobMetrics = {
+    originalSize: file.size,
+    startedAt,
+  }
+
+  const progressListeners = new Set<(progress: number) => void>()
+  const stageListeners = new Set<(stage: CompressionJobStage) => void>()
+  const metricsListeners = new Set<
+    (nextMetrics: CompressionJobMetrics) => void
+  >()
+
+  const emitProgress = () => {
+    for (const listener of progressListeners) {
+      try {
+        listener(progress)
+      } catch {}
+    }
+  }
+
+  const emitStage = () => {
+    for (const listener of stageListeners) {
+      try {
+        listener(status)
+      } catch {}
+    }
+  }
+
+  const emitMetrics = () => {
+    const snapshot = { ...metrics }
+    for (const listener of metricsListeners) {
+      try {
+        listener(snapshot)
+      } catch {}
+    }
+  }
+
+  const setStage = (nextStage: CompressionJobStage) => {
+    if (status === nextStage) {
+      return
+    }
+
+    status = nextStage
+    progress = getProgressForStage(nextStage, progress)
+    emitStage()
+    emitProgress()
+  }
+
+  const setMetrics = (nextMetrics: Partial<CompressionJobMetrics>) => {
+    metrics = {
+      ...metrics,
+      ...nextMetrics,
+    }
+    emitMetrics()
+  }
+
+  const syncExternalAbort = () => abortController.abort()
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      abortController.abort()
+    } else {
+      externalSignal.addEventListener('abort', syncExternalAbort, {
+        once: true,
+      })
+    }
+  }
+
+  const promise = (async () => {
+    try {
+      const compressionFile = await prepareCompressionFile(file, preprocess)
+
+      if (useQueue) {
+        setStage('queued')
+      } else {
+        setStage('compressing')
+      }
+
+      const blob = await runBlobCompression(
+        compressionFile,
+        {
+          ...compressOptions,
+          signal: abortController.signal,
+        },
+        {
+          useQueue,
+          priority,
+          timeout,
+          useWorker,
+          onQueued: () => setStage('queued'),
+          onCompressing: () => setStage('compressing'),
+        },
+      )
+
+      setStage('converting')
+
+      const result = (await convertBlobToType(
+        blob,
+        type,
+        file.name,
+      )) as CompressResult<T>
+      const finishedAt = Date.now()
+
+      setMetrics({
+        compressedSize: blob.size,
+        finishedAt,
+        durationMs: finishedAt - startedAt,
+      })
+      setStage('done')
+
+      return result
+    } catch (error) {
+      const normalizedError =
+        error instanceof Error ? error : new Error('Compression failed')
+      const finishedAt = Date.now()
+
+      setMetrics({
+        finishedAt,
+        durationMs: finishedAt - startedAt,
+      })
+      setStage(isCancellationError(normalizedError) ? 'cancelled' : 'failed')
+
+      throw normalizedError
+    } finally {
+      if (externalSignal) {
+        try {
+          externalSignal.removeEventListener('abort', syncExternalAbort)
+        } catch {}
+      }
+    }
+  })()
+
+  return {
+    id: jobId,
+    get status() {
+      return status
+    },
+    promise,
+    cancel() {
+      abortController.abort()
+    },
+    retry() {
+      return compressJob<T>(file, options)
+    },
+    onProgress(listener) {
+      progressListeners.add(listener)
+      listener(progress)
+      return () => {
+        progressListeners.delete(listener)
+      }
+    },
+    onStageChange(listener) {
+      stageListeners.add(listener)
+      listener(status)
+      return () => {
+        stageListeners.delete(listener)
+      }
+    },
+    onMetrics(listener) {
+      metricsListeners.add(listener)
+      listener({ ...metrics })
+      return () => {
+        metricsListeners.delete(listener)
+      }
+    },
   }
 }
 
@@ -150,6 +317,137 @@ async function compressDirectly<T extends CompressResultType>(
 ): Promise<CompressResult<T>> {
   const compressedBlob = await compressBlob(file, options, useWorker)
   return (await convertBlobToType(compressedBlob, type)) as CompressResult<T>
+}
+
+async function prepareCompressionFile(
+  file: File,
+  preprocess?: PreprocessOptions,
+): Promise<File> {
+  if (!preprocess) {
+    return file
+  }
+
+  let inputForCompression: File | Blob = file
+
+  try {
+    let guessedOutType: 'image/png' | 'image/jpeg' | 'image/webp' = 'image/png'
+    if (preprocess.outputType) {
+      guessedOutType = preprocess.outputType
+    } else if (/jpe?g/i.test(file.type)) {
+      guessedOutType = 'image/jpeg'
+    } else if (/png/i.test(file.type)) {
+      guessedOutType = 'image/png'
+    } else if (/webp/i.test(file.type)) {
+      guessedOutType = 'image/webp'
+    }
+
+    const pre = await preprocessImage(file, {
+      ...preprocess,
+      outputType: guessedOutType,
+    })
+    inputForCompression = pre.blob
+  } catch (error) {
+    logger.warn('Preprocess failed, fallback to original file:', error)
+  }
+
+  return inputForCompression instanceof File
+    ? inputForCompression
+    : new File([inputForCompression], file.name, {
+        type: inputForCompression.type,
+      })
+}
+
+async function runBlobCompression(
+  file: File,
+  options: CompressOptions,
+  execution: {
+    useQueue: boolean
+    priority?: number
+    timeout: number
+    useWorker: boolean
+    onQueued?: () => void
+    onCompressing?: () => void
+  },
+): Promise<Blob> {
+  const { useQueue, priority, timeout, useWorker, onQueued, onCompressing } =
+    execution
+
+  const compressPromise = useQueue
+    ? (() => {
+        onQueued?.()
+        return compressionQueue.compress(
+          file,
+          {
+            ...options,
+            useWorker,
+            type: 'blob',
+          },
+          priority,
+          (queuedFile, queuedOptions) => {
+            onCompressing?.()
+            return compressBlob(queuedFile, queuedOptions, useWorker)
+          },
+        )
+      })()
+    : (() => {
+        onCompressing?.()
+        return compressBlob(file, options, useWorker)
+      })()
+
+  return raceWithTimeout(compressPromise, timeout)
+}
+
+async function raceWithTimeout<T>(
+  promise: Promise<T>,
+  timeout: number,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`Compression timeout after ${timeout}ms`))
+        }, timeout)
+      }),
+    ])
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+    }
+  }
+}
+
+function createCompressionJobId(file: File): string {
+  return `${file.name}_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+}
+
+function getProgressForStage(
+  stage: CompressionJobStage,
+  currentProgress: number,
+): number {
+  switch (stage) {
+    case 'queued':
+      return 0.1
+    case 'preprocessing':
+      return 0.2
+    case 'compressing':
+      return 0.7
+    case 'converting':
+      return 0.9
+    case 'done':
+      return 1
+    case 'failed':
+    case 'cancelled':
+      return currentProgress
+    default:
+      return currentProgress
+  }
+}
+
+function isCancellationError(error: Error): boolean {
+  return /cancelled|aborted/i.test(error.message)
 }
 
 async function compressBlob(

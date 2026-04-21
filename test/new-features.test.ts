@@ -10,7 +10,7 @@ describe('新功能验证测试', () => {
   const webpFile = createFixtureImageFile('image/webp')
 
   describe('returnAllResults 功能测试', () => {
-    it('应该返回多结果对象结构', async () => {
+    it('[CORE-009] 应该返回多结果对象结构', async () => {
       const result = await compress(testFile, {
         quality: 0.8,
         returnAllResults: true,
@@ -36,7 +36,7 @@ describe('新功能验证测试', () => {
       console.log(`结果数量: ${multiResult.allResults.length}`)
     })
 
-    it('应该返回单一结果当 returnAllResults=false 时', async () => {
+    it('[CORE-008] 应该返回单一结果当 returnAllResults=false 时', async () => {
       const result = await compress(testFile, {
         quality: 0.8,
         returnAllResults: false,
@@ -50,7 +50,7 @@ describe('新功能验证测试', () => {
       console.log('✅ 单结果模式验证通过')
     })
 
-    it('应该支持不同的输出类型', async () => {
+    it('[CORE-003] 应该支持不同的输出类型', async () => {
       // 测试 file 类型
       const fileResult = (await compress(testFile, {
         quality: 0.8,
@@ -68,7 +68,7 @@ describe('新功能验证测试', () => {
   })
 
   describe('preserveExif 功能测试', () => {
-    it('应该抛出错误当 GIF + preserveExif=true', async () => {
+    it('[CORE-007] 应该抛出错误当 GIF + preserveExif=true', async () => {
       await expect(
         compress(gifFile, {
           quality: 0.8,
@@ -80,7 +80,7 @@ describe('新功能验证测试', () => {
       console.log('✅ GIF + preserveExif 错误处理验证通过')
     })
 
-    it('应该成功处理 JPEG + preserveExif=true', async () => {
+    it('[CORE-007] 应该成功处理 JPEG + preserveExif=true', async () => {
       const result = (await compress(testFile, {
         quality: 0.8,
         preserveExif: true,
@@ -104,7 +104,7 @@ describe('新功能验证测试', () => {
       )
     })
 
-    it('应该成功处理 PNG + preserveExif=true', async () => {
+    it('[CORE-007] 应该成功处理 PNG + preserveExif=true', async () => {
       const result = (await compress(pngFile, {
         quality: 0.8,
         preserveExif: true,
@@ -120,7 +120,7 @@ describe('新功能验证测试', () => {
       console.log(`使用的工具: ${usedTools.join(', ')}`)
     })
 
-    it('应该成功处理 WebP + preserveExif=true', async () => {
+    it('[CORE-007] 应该成功处理 WebP + preserveExif=true', async () => {
       const result = (await compress(webpFile, {
         quality: 0.8,
         preserveExif: true,
@@ -139,7 +139,7 @@ describe('新功能验证测试', () => {
   })
 
   describe('类型安全和重载测试', () => {
-    it('应该正确推断返回类型', async () => {
+    it('[CORE-001][CORE-003][CORE-009] 应该正确推断返回类型', async () => {
       // 测试类型推断
       const singleResult = await compress(testFile, {
         quality: 0.8,
@@ -159,7 +159,7 @@ describe('新功能验证测试', () => {
       console.log('✅ 类型推断验证通过')
     })
 
-    it('应该向后兼容旧的 API', async () => {
+    it('[CORE-001] 应该向后兼容旧的 API', async () => {
       // 测试旧 API 仍然工作
       const result1 = await compress(testFile, 0.8)
       const result2 = await compress(testFile, 0.7, 'blob')
@@ -202,7 +202,7 @@ describe('新功能验证测试', () => {
       console.log(`最优工具: ${result.bestTool}`)
     })
 
-    it('应该正确处理各种文件类型的工具选择', async () => {
+    it('[CORE-004] 应该正确处理各种文件类型的工具选择', async () => {
       const fileTypes = [
         {
           file: testFile,
@@ -222,7 +222,7 @@ describe('新功能验证测试', () => {
         {
           file: webpFile,
           type: 'WebP',
-          expectedTools: ['jsquash', 'canvas', 'browser-image-compression'],
+          expectedTools: ['canvas', 'browser-image-compression'],
         },
       ]
 

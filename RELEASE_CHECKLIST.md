@@ -11,16 +11,23 @@ Use this checklist before publishing a new release to npm. These are automated a
 
 3. Build
    - pnpm build
+   - pnpm package:check
    - Verify `dist/index.js` and `dist/index.d.ts` exist
 
-4. Size check (optional)
-   - pnpm run size
+4. Regenerate generated docs
+   - pnpm docs:generate
+   - pnpm docs:check
+   - If public behavior changed, update the relevant `specs/*.md` contract and capability data in `specs/capabilities.yaml`
+   - If packaging behavior changed, update `specs/003-packaging-and-release-contract.md`
 
 5. Verify exports & sideEffects
    - Ensure `package.json` `exports` points to the correct dist entries
    - Ensure `sideEffects` is correct (false if no side-effectful modules)
+   - Ensure `docs/status.md` matches `package.json` and `specs/capabilities.yaml`
+   - Ensure behavior-locking tests still reference the relevant `CORE-*` / `WORKER-*` rule when applicable
 
 6. Smoke test in a sample project (recommended)
+   - Run `pnpm package:check` to verify self-referenced `import` / `require` for the published export surface
    - Create a temporary dir and `npm link` or `pnpm pack` the built package
    - Import core API to validate runtime behavior, e.g.:
      ```js

@@ -69,6 +69,9 @@
   ],
   "scripts": {
     "build": "tsdown --minify",
+    "docs:generate": "node ./scripts/generate-status-doc.mjs",
+    "docs:check": "node ./scripts/generate-status-doc.mjs --check",
+    "package:check": "node ./scripts/check-package-contract.mjs",
     "play": "pnpm run -C playground dev",
     "dev": "pnpm run -C playground dev",
     "play:build": "pnpm run -C playground build",
@@ -96,7 +99,8 @@
     "prettier": "^3.6.2",
     "tsdown": "^0.12.9",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "yaml": "^2.8.1"
   },
   "prettier": "@sxzz/prettier-config"
 }

@@ -2,6 +2,23 @@ export type CompressResultType = 'blob' | 'file' | 'base64' | 'arrayBuffer'
 
 // JSQuash 支持的输出格式类型
 export type OutputType = 'avif' | 'jpeg' | 'jxl' | 'png' | 'webp'
+export type CompressionOutputFormat =
+  | 'preserve'
+  | 'auto'
+  | 'jpeg'
+  | 'png'
+  | 'webp'
+export type CompressionGoal = 'fastest' | 'balanced' | 'visually-lossless'
+export type CompressionOutputTarget = Exclude<
+  CompressionOutputFormat,
+  'preserve' | 'auto'
+>
+
+export interface CompressionObjective {
+  targetBytes: number
+  goal?: CompressionGoal
+  output?: CompressionOutputFormat
+}
 
 export type CompressResult<T extends CompressResultType> = T extends 'blob'
   ? Blob
@@ -85,6 +102,19 @@ export interface CompressOptions {
   type?: CompressResultType
 
   /**
+   * 输出图片格式策略
+   * `type` 控制返回载体，`output` 控制最终图片 MIME 类型
+   * @default 'preserve'
+   */
+  output?: CompressionOutputFormat
+
+  /**
+   * 目标驱动压缩（phase-1）
+   * 当前只支持基于 targetBytes 的搜索
+   */
+  objective?: CompressionObjective
+
+  /**
    * 工具配置数组，用于传入各个工具的特定配置
    * @example
    * [
@@ -153,9 +183,47 @@ export interface CompressResultItem<T extends CompressResultType> {
   error?: string
 }
 
+export interface CompressionOutputDecisionCandidate {
+  format: CompressionOutputTarget
+  size?: number
+  selected?: boolean
+  reason?: string
+}
+
+export interface CompressionOutputDecision {
+  requested: CompressionOutputFormat
+  selected: 'preserve' | CompressionOutputTarget
+  selectedTool?: string
+  usedFallback: boolean
+  candidates: CompressionOutputDecisionCandidate[]
+  rejectedReasons: string[]
+}
+
+export interface CompressionObjectiveCandidate {
+  quality: number
+  compressedSize: number
+  passed: boolean
+  selectedTool?: string
+  selectedOutput?: string
+}
+
+export interface CompressionObjectiveDecision {
+  goal: CompressionGoal
+  targetBytes: number
+  selectedQuality: number
+  selectedTool?: string
+  selectedOutput?: string
+  candidatesEvaluated: number
+  usedFallback: boolean
+  candidates: CompressionObjectiveCandidate[]
+  rejectedReasons: string[]
+}
+
 export interface MultipleCompressResults<T extends CompressResultType> {
   bestResult: CompressResult<T>
   bestTool: string
   allResults: CompressResultItem<T>[]
   totalDuration: number
+  outputDecision?: CompressionOutputDecision
+  objectiveDecision?: CompressionObjectiveDecision
 }

@@ -1,5 +1,31 @@
 import type { CompressResult, CompressResultType } from './types'
 
+const MIME_TYPE_TO_EXTENSION: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/x-icon': 'ico',
+}
+
+function resolveOutputFileName(
+  originalFileName: string | undefined,
+  mimeType: string,
+): string {
+  if (!originalFileName) {
+    return 'compressed'
+  }
+
+  const extension = MIME_TYPE_TO_EXTENSION[mimeType.toLowerCase()]
+  if (!extension) {
+    return originalFileName
+  }
+
+  const baseName = originalFileName.replace(/\.[^./\\]+$/, '')
+  return `${baseName}.${extension}`
+}
+
 // 辅助函数：将 Blob 转换为不同格式
 export default async function convertBlobToType<T extends CompressResultType>(
   blob: Blob,
@@ -10,9 +36,13 @@ export default async function convertBlobToType<T extends CompressResultType>(
     case 'blob':
       return blob as CompressResult<T>
     case 'file':
-      return new File([blob], originalFileName || 'compressed', {
-        type: blob.type,
-      }) as CompressResult<T>
+      return new File(
+        [blob],
+        resolveOutputFileName(originalFileName, blob.type),
+        {
+          type: blob.type,
+        },
+      ) as CompressResult<T>
     case 'base64':
       return new Promise((resolve) => {
         const reader = new FileReader()

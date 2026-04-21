@@ -5,6 +5,8 @@
 export interface QualityOptions {
   /** Max dimension to downscale for analysis to speed up (e.g., 512 or 1024) */
   maxDimension?: number
+  /** Whether to generate a difference heatmap blob */
+  includeHeatmap?: boolean
 }
 
 export interface QualityResult {
@@ -260,6 +262,9 @@ export async function assessQuality(
   const { imageData: b } = await loadToCanvas(compressedSrc, maxDimension)
   const ssim = computeSSIM(a, b)
   const psnr = computePSNR(a, b)
-  const heatmap = await generateDifferenceHeatmap(a, b)
+  const heatmap =
+    options.includeHeatmap === false
+      ? undefined
+      : await generateDifferenceHeatmap(a, b)
   return { ssim, psnr, heatmap }
 }

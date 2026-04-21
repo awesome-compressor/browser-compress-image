@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { runWithAbortAndTimeout } from '../src/utils/abort'
 
 describe('runWithAbortAndTimeout', () => {
-  it('calls the wrapped function only once when timeout is enabled', async () => {
+  it('[CORE-011] calls the wrapped function only once when timeout is enabled', async () => {
     let calls = 0
 
     const result = await runWithAbortAndTimeout(
@@ -18,7 +18,7 @@ describe('runWithAbortAndTimeout', () => {
     expect(calls).toBe(1)
   })
 
-  it('does not start work when the signal is already aborted', async () => {
+  it('[CORE-011] does not start work when the signal is already aborted', async () => {
     const controller = new AbortController()
     const fn = vi.fn().mockResolvedValue('ok')
 

@@ -7,6 +7,12 @@ import type {
   ToolConfig,
 } from './types'
 import convertBlobToType from './convertBlobToType'
+import {
+  canUseNetworkTool,
+  filterDeploymentBlockedTools,
+  mergeDeploymentToolConfigs,
+} from './deployment'
+import { resolveCompressionOutput } from './outputFormat'
 import { runWithAbortAndTimeout } from './utils/abort'
 import logger from './utils/logger'
 
@@ -162,11 +168,20 @@ export async function compressWithTools<T extends CompressResultType = 'blob'>(
     preserveExif = false,
     returnAllResults = false,
     type: resultType = 'blob' as T,
+    output = 'preserve',
+    objective,
     toolConfigs = [],
     toolRegistry = globalToolRegistry,
     signal,
     timeoutMs,
   } = options
+
+  if (objective) {
+    throw new Error(
+      'objective mode is currently supported only on compress(), compressDecision(), compressWithStats(), compressEnhanced(), and compressJob().',
+    )
+  }
+  const effectiveToolConfigs = mergeDeploymentToolConfigs(toolConfigs)
 
   // 使用多工具压缩比对策略
   const compressionOptions = {
@@ -177,7 +192,7 @@ export async function compressWithTools<T extends CompressResultType = 'blob'>(
     maxWidth,
     maxHeight,
     preserveExif,
-    toolConfigs,
+    toolConfigs: effectiveToolConfigs,
     signal,
     timeoutMs,
   }
@@ -186,11 +201,12 @@ export async function compressWithTools<T extends CompressResultType = 'blob'>(
   let tools = toolRegistry.getToolsForFileType(file.type)
 
   // 如果在 toolConfigs 中配置了 TinyPNG，则添加到工具列表中
-  const hasTinyPngConfig = toolConfigs.some(
+  const hasTinyPngConfig = effectiveToolConfigs.some(
     (config) => config.name === 'tinypng',
   )
   if (
     hasTinyPngConfig &&
+    canUseNetworkTool('tinypng') &&
     toolRegistry.isToolRegistered('tinypng') &&
     ['png', 'webp', 'jpeg', 'jpg'].some((type) => file.type.includes(type))
   ) {
@@ -198,6 +214,7 @@ export async function compressWithTools<T extends CompressResultType = 'blob'>(
       tools = [...tools, 'tinypng']
     }
   }
+  tools = filterDeploymentBlockedTools(tools)
 
   // 过滤掉未注册的工具
   tools = tools.filter((tool) => toolRegistry.isToolRegistered(tool))
@@ -215,6 +232,7 @@ export async function compressWithTools<T extends CompressResultType = 'blob'>(
       compressionOptions,
       tools,
       resultType,
+      output,
       toolRegistry,
     )
   }
@@ -226,8 +244,17 @@ export async function compressWithTools<T extends CompressResultType = 'blob'>(
     tools,
     toolRegistry,
   )
+  const { blob: finalResult } = await resolveCompressionOutput(
+    file,
+    bestResult,
+    {
+      output,
+      quality,
+      preserveExif,
+    },
+  )
 
-  return convertBlobToType(bestResult, resultType, file.name)
+  return convertBlobToType(finalResult, resultType, file.name)
 }
 
 // 多工具压缩比对核心函数
@@ -416,6 +443,7 @@ async function compressWithMultipleToolsAndReturnAll<
   },
   tools: CompressorTool[],
   resultType: T,
+  output: CompressOptions['output'],
   toolRegistry: ToolRegistry,
 ): Promise<MultipleCompressResults<T>> {
   const totalStartTime = performance.now()
@@ -573,8 +601,15 @@ async function compressWithMultipleToolsAndReturnAll<
     }
   }
 
+  const { blob: formattedBestBlob, decision: outputDecision } =
+    await resolveCompressionOutput(file, bestAttempt.blob, {
+      output,
+      quality: options.quality,
+      preserveExif: options.preserveExif,
+      selectedTool: bestAttempt.tool,
+    })
   const bestResult = await convertBlobToType(
-    bestAttempt.blob,
+    formattedBestBlob,
     resultType,
     file.name,
   )
@@ -588,5 +623,6 @@ async function compressWithMultipleToolsAndReturnAll<
     bestTool: bestAttempt.tool,
     allResults,
     totalDuration,
+    outputDecision,
   }
 }

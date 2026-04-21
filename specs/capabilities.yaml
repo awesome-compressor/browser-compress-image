@@ -1,0 +1,263 @@
+schemaVersion: 1
+
+maturityLevels:
+  stable: Supported public behavior.
+  beta: Public behavior that is usable but may still tighten.
+  experimental: Opt-in behavior that is not yet a fully supported path.
+
+behavior:
+  builtInCompressionSelection: parallel-compare-smallest-successful-result
+  builtInExifAllowlist:
+    - browser-image-compression
+    - compressorjs
+  compressEnhancedDefaults:
+    useQueue: true
+    useWorker: false
+  workerSemantics:
+    maturity: experimental
+    mode: best-effort
+    fallback: main-thread
+
+apis:
+  compress:
+    maturity: stable
+    summary: Default multi-tool compression entrypoint.
+    notes:
+      - Main-thread execution is the supported path.
+      - returnAllResults exposes all tool attempts and the best result.
+      - Phase-1 output control supports preserve, auto, jpeg, png, and webp.
+      - Output decisions are explained on the all-results path.
+      - Phase-1 objective mode supports targetBytes search with fastest, balanced, and visually-lossless goals.
+  compressDecision:
+    maturity: beta
+    summary: Explainable single-result compression entrypoint for business-facing default flows.
+    notes:
+      - Returns the requested result carrier together with bestTool, size ratio, duration, and toolsUsed.
+      - When output is not preserve, outputDecision explains the selected final format.
+      - Objective mode exposes objectiveDecision for the selected targetBytes search result.
+  compressWithStats:
+    maturity: stable
+    summary: Compression entrypoint that returns tool timings and the winning result summary.
+    notes:
+      - Exposes the winning compressedFile plus per-tool attempt metrics.
+      - When output is not preserve, outputDecision explains the selected final format.
+      - Objective mode exposes objectiveDecision for the selected targetBytes search result.
+  compressWithTools:
+    maturity: stable
+    summary: Compression entrypoint with an explicit tool registry.
+    notes:
+      - Main-thread execution is the supported path.
+      - Tool availability depends on what the caller registers.
+      - Phase-1 output control supports preserve, auto, jpeg, png, and webp.
+      - Output decisions are explained on the all-results path.
+      - Objective mode is intentionally unsupported on this low-level API in phase 1.
+  compressEnhanced:
+    maturity: beta
+    summary: Queue-managed compression entrypoint.
+    notes:
+      - Queue-backed main-thread execution is the recommended default.
+      - useWorker remains opt-in and experimental.
+      - Inherits phase-1 output control from CompressOptions on the main-thread path.
+      - Inherits phase-1 objective mode from CompressOptions on the main-thread path.
+  compressJob:
+    maturity: beta
+    summary: Job-handle compression entrypoint with lifecycle subscriptions.
+    notes:
+      - Returns an immediate handle with id, status, promise, cancel, retry, and lifecycle listeners.
+      - Progress is currently coarse and stage-based rather than byte-accurate.
+      - Job results inherit phase-1 output control through EnhancedCompressOptions.
+      - Job results also inherit phase-1 objective mode through EnhancedCompressOptions.
+  assessQuality:
+    maturity: beta
+    summary: Compares any two image sources with SSIM, PSNR, and optional heatmap output.
+    notes:
+      - Accepts arbitrary source pairs rather than assuming one side is the original image.
+      - Heatmap generation can be disabled for cheaper evaluation passes.
+  buildConversionColumn:
+    maturity: beta
+    summary: Builds conversion-comparison flows with optional non-original evaluation baselines.
+    notes:
+      - Keeps compressionRatio relative to the input file.
+      - Adds evaluationRatio, evaluationLabel, and optional qualityMetrics against the chosen baseline.
+  configureCompressionDeployment:
+    maturity: beta
+    summary: Configures deployment-aware asset loading and network-tool policy.
+    notes:
+      - Supports best-effort, offline-preferred, and offline-strict modes.
+      - Affects browser-image-compression libURL defaults, JSQuash WASM loading, and TinyPNG availability.
+  getCompressionDeploymentConfig:
+    maturity: beta
+    summary: Returns the current resolved deployment config snapshot.
+    notes:
+      - Exposes mode, browser-image-compression asset settings, WASM loading policy, and network-tool policy.
+  compressEnhancedBatch:
+    maturity: beta
+    summary: Batch wrapper around compressEnhanced.
+    notes:
+      - Uses per-file priorities derived from size and list order.
+  compressEnhanced.useWorker:
+    maturity: experimental
+    summary: Best-effort worker execution for compressEnhanced.
+    notes:
+      - Unsupported or failed worker attempts fall back to main-thread compression.
+  waitForCompressionInitialization:
+    maturity: beta
+    summary: Waits for the worker support probe to finish.
+    notes:
+      - Resolving does not imply worker support is available.
+  getCompressionStats:
+    maturity: beta
+    summary: Returns aggregate queue and worker capability state.
+    notes:
+      - Exposes queue counts and the current worker support flag.
+  configureCompression:
+    maturity: beta
+    summary: Configures queue concurrency for enhanced compression.
+    notes:
+      - maxConcurrency is clamped by the implementation.
+  clearCompressionQueue:
+    maturity: beta
+    summary: Cancels pending enhanced-compression tasks.
+    notes:
+      - Running tasks are not force-stopped by this API.
+
+tools:
+  browser-image-compression:
+    label: Browser Image Compression
+    maturity: stable
+    inputFormats:
+      - jpeg
+      - png
+      - webp
+    outputFormats:
+      - jpeg
+      - png
+      - webp
+    preserveExif: yes
+    browserOnly: yes
+    requiresNetwork: no
+    workerSupport: tool-managed
+    notes:
+      - Accepts a self-hosted libURL for offline or air-gapped deployments.
+  compressorjs:
+    label: CompressorJS
+    maturity: stable
+    inputFormats:
+      - jpeg
+    outputFormats:
+      - jpeg
+    preserveExif: yes
+    browserOnly: yes
+    requiresNetwork: no
+    workerSupport: no
+    notes:
+      - The built-in adapter is optimized for JPEG and rejects non-JPEG input.
+  canvas:
+    label: Canvas
+    maturity: stable
+    inputFormats:
+      - jpeg
+      - png
+      - webp
+      - other-raster
+    outputFormats:
+      - jpeg
+      - png
+      - webp
+    preserveExif: no
+    browserOnly: yes
+    requiresNetwork: no
+    workerSupport: no
+    notes:
+      - PNG compression may emit JPEG when that produces a smaller result.
+  gifsicle:
+    label: Gifsicle
+    maturity: stable
+    inputFormats:
+      - gif
+    outputFormats:
+      - gif
+    preserveExif: not-applicable
+    browserOnly: yes
+    requiresNetwork: no
+    workerSupport: experimental
+    notes:
+      - GIF-only compression path.
+      - Worker compatibility is gated by the library's experimental worker story.
+  jsquash:
+    label: JSQuash
+    maturity: beta
+    inputFormats:
+      - jpeg
+      - png
+      - webp
+      - avif
+      - jxl
+    outputFormats:
+      - jpeg
+      - png
+      - webp
+      - avif
+      - jxl
+    preserveExif: no
+    browserOnly: yes
+    requiresNetwork: optional
+    workerSupport: no
+    notes:
+      - Browser-only WASM path.
+      - Local WASM loading can fall back to CDN when local assets are unavailable unless deployment policy disables fallback.
+  tinypng:
+    label: TinyPNG
+    maturity: stable
+    inputFormats:
+      - jpeg
+      - png
+      - webp
+    outputFormats:
+      - jpeg
+      - png
+      - webp
+    preserveExif: no
+    browserOnly: no
+    requiresNetwork: yes
+    workerSupport: experimental
+    notes:
+      - Requires an API key.
+      - Not included in the built-in preserveExif allowlist.
+
+formats:
+  jpeg:
+    builtInTools:
+      - jsquash
+      - browser-image-compression
+      - compressorjs
+      - canvas
+    optionalTools:
+      - tinypng
+  png:
+    builtInTools:
+      - jsquash
+      - browser-image-compression
+      - canvas
+    optionalTools:
+      - tinypng
+  webp:
+    builtInTools:
+      - canvas
+      - browser-image-compression
+    optionalTools:
+      - tinypng
+  gif:
+    builtInTools:
+      - gifsicle
+  avif:
+    builtInTools:
+      - jsquash
+  jxl:
+    builtInTools:
+      - jsquash
+  other-raster:
+    builtInTools:
+      - jsquash
+      - browser-image-compression
+      - canvas
