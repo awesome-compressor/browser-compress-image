@@ -8,10 +8,10 @@ export function hasResizeOptions(
 ): boolean {
   return Boolean(
     resize &&
-      (resize.targetWidth ||
-        resize.targetHeight ||
-        resize.maxWidth ||
-        resize.maxHeight),
+    (resize.targetWidth ||
+      resize.targetHeight ||
+      resize.maxWidth ||
+      resize.maxHeight),
   )
 }
 

@@ -18,9 +18,8 @@ describe('auto output format', () => {
       convertImage,
     }))
 
-    const { ToolRegistry, compressWithTools } = await import(
-      '../src/compressWithTools'
-    )
+    const { ToolRegistry, compressWithTools } =
+      await import('../src/compressWithTools')
 
     const registry = new ToolRegistry()
     registry.registerTool(
@@ -82,9 +81,8 @@ describe('auto output format', () => {
       convertImage,
     }))
 
-    const { ToolRegistry, compressWithTools } = await import(
-      '../src/compressWithTools'
-    )
+    const { ToolRegistry, compressWithTools } =
+      await import('../src/compressWithTools')
 
     const registry = new ToolRegistry()
     registry.registerTool(
@@ -149,9 +147,8 @@ describe('auto output format', () => {
       convertImage,
     }))
 
-    const { ToolRegistry, compressWithTools } = await import(
-      '../src/compressWithTools'
-    )
+    const { ToolRegistry, compressWithTools } =
+      await import('../src/compressWithTools')
 
     const registry = new ToolRegistry()
     registry.registerTool(
@@ -191,9 +188,8 @@ describe('auto output format', () => {
       convertImage,
     }))
 
-    const { ToolRegistry, compressWithTools } = await import(
-      '../src/compressWithTools'
-    )
+    const { ToolRegistry, compressWithTools } =
+      await import('../src/compressWithTools')
 
     const registry = new ToolRegistry()
     registry.registerTool(
@@ -233,9 +229,8 @@ describe('auto output format', () => {
       convertImage,
     }))
 
-    const { ToolRegistry, compressWithTools } = await import(
-      '../src/compressWithTools'
-    )
+    const { ToolRegistry, compressWithTools } =
+      await import('../src/compressWithTools')
 
     const registry = new ToolRegistry()
     registry.registerTool(

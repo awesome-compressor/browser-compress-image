@@ -3,10 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 function mockBuiltInCompressors(
   implementation?: (file: File, options: { quality: number }) => Promise<Blob>,
 ) {
-  const compressor = vi.fn().mockImplementation(
-    implementation ||
-      (async () => new Blob(['j'.repeat(16)], { type: 'image/jpeg' })),
-  )
+  const compressor = vi
+    .fn()
+    .mockImplementation(
+      implementation ||
+        (async () => new Blob(['j'.repeat(16)], { type: 'image/jpeg' })),
+    )
 
   vi.doMock('../src/tools/compressWithJsquash', () => ({
     default: compressor,

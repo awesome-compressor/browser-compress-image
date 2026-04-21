@@ -26,21 +26,18 @@ import { resolveCompressionOutput } from './outputFormat'
 async function getCompressorTool(tool: CompressorTool) {
   switch (tool) {
     case 'browser-image-compression': {
-      const { default: compressor } = await import(
-        './tools/compressWithBrowserImageCompression'
-      )
+      const { default: compressor } =
+        await import('./tools/compressWithBrowserImageCompression')
       return compressor
     }
     case 'compressorjs': {
-      const { default: compressor } = await import(
-        './tools/compressWithCompressorJS'
-      )
+      const { default: compressor } =
+        await import('./tools/compressWithCompressorJS')
       return compressor
     }
     case 'gifsicle': {
-      const { default: compressor } = await import(
-        './tools/compressWithGifsicle'
-      )
+      const { default: compressor } =
+        await import('./tools/compressWithGifsicle')
       return compressor
     }
     case 'canvas': {
@@ -48,15 +45,13 @@ async function getCompressorTool(tool: CompressorTool) {
       return compressor
     }
     case 'jsquash': {
-      const { default: compressor } = await import(
-        './tools/compressWithJsquash'
-      )
+      const { default: compressor } =
+        await import('./tools/compressWithJsquash')
       return compressor
     }
     case 'tinypng': {
-      const { compressWithTinyPng } = await import(
-        './tools/compressWithTinyPng'
-      )
+      const { compressWithTinyPng } =
+        await import('./tools/compressWithTinyPng')
       return compressWithTinyPng
     }
     default:
@@ -776,7 +771,11 @@ export async function compressDecision<T extends CompressResultType = 'blob'>(
 
   const { type: resultType = 'blob' as T, ...statsOptions } = options
   const stats = await compressWithStats(file, statsOptions)
-  const result = await convertBlobToType(stats.compressedFile, resultType, file.name)
+  const result = await convertBlobToType(
+    stats.compressedFile,
+    resultType,
+    file.name,
+  )
 
   return {
     result,

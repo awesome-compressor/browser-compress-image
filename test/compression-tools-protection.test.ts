@@ -17,9 +17,8 @@ describe('压缩工具文件大小保护测试', () => {
           ),
       }))
 
-      const { default: compressWithBrowserImageCompression } = await import(
-        '../src/tools/compressWithBrowserImageCompression'
-      )
+      const { default: compressWithBrowserImageCompression } =
+        await import('../src/tools/compressWithBrowserImageCompression')
 
       const originalFile = new File(['small'], 'test.jpg', {
         type: 'image/jpeg',
@@ -48,9 +47,8 @@ describe('压缩工具文件大小保护测试', () => {
         }),
       }))
 
-      const { default: compressWithBrowserImageCompression } = await import(
-        '../src/tools/compressWithBrowserImageCompression'
-      )
+      const { default: compressWithBrowserImageCompression } =
+        await import('../src/tools/compressWithBrowserImageCompression')
 
       const originalContent = 'x'.repeat(1000)
       const originalFile = new File([originalContent], 'test.jpg', {
@@ -83,9 +81,8 @@ describe('压缩工具文件大小保护测试', () => {
         }),
       }))
 
-      const { default: compressWithCompressorJS } = await import(
-        '../src/tools/compressWithCompressorJS'
-      )
+      const { default: compressWithCompressorJS } =
+        await import('../src/tools/compressWithCompressorJS')
 
       const originalFile = new File(['small'], 'test.jpg', {
         type: 'image/jpeg',
@@ -108,9 +105,8 @@ describe('压缩工具文件大小保护测试', () => {
         }),
       }))
 
-      const { default: compressWithCompressorJS } = await import(
-        '../src/tools/compressWithCompressorJS'
-      )
+      const { default: compressWithCompressorJS } =
+        await import('../src/tools/compressWithCompressorJS')
 
       const originalContent = 'x'.repeat(1000)
       const originalFile = new File([originalContent], 'test.jpg', {
@@ -126,9 +122,8 @@ describe('压缩工具文件大小保护测试', () => {
     })
 
     it('应该拒绝非JPEG文件', async () => {
-      const { default: compressWithCompressorJS } = await import(
-        '../src/tools/compressWithCompressorJS'
-      )
+      const { default: compressWithCompressorJS } =
+        await import('../src/tools/compressWithCompressorJS')
 
       const pngFile = new File(['png content'], 'test.png', {
         type: 'image/png',

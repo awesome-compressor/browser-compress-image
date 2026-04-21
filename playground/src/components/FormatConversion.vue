@@ -500,7 +500,7 @@
 import type { TargetFormat } from '../../../src/conversion'
 import type { ConversionCompareItem } from '../../../src/orchestrators/compareConversion'
 import { ElMessage } from 'element-plus'
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { buildConversionColumn } from '../../../src/orchestrators/compareConversion'
 // Remove unused Element Plus imports
 import 'img-comparison-slider/dist/styles.css'
@@ -544,8 +544,7 @@ const originalImageUrl = ref('')
 const selectedTargetFormat = ref<TargetFormat>('webp')
 
 function isToolConfigConfigured(config: Props['toolConfigs'][number]) {
-  if (config.name === 'tinypng')
-    return config.key.trim().length > 0
+  if (config.name === 'tinypng') return config.key.trim().length > 0
   if (config.name === 'browser-image-compression')
     return (config.libURL || '').trim().length > 0
   return false
@@ -690,6 +689,24 @@ const svgMaintainAspect = ref(true)
 const svgIntrinsicAspect = ref<number | undefined>(undefined)
 let _adjustingSvgDim = false
 
+watch(svgWidth, (newW) => {
+  if (!svgMaintainAspect.value || _adjustingSvgDim) return
+  const aspect = svgIntrinsicAspect.value
+  if (!newW || !aspect) return
+  _adjustingSvgDim = true
+  svgHeight.value = Math.max(1, Math.round(newW / aspect))
+  _adjustingSvgDim = false
+})
+
+watch(svgHeight, (newH) => {
+  if (!svgMaintainAspect.value || _adjustingSvgDim) return
+  const aspect = svgIntrinsicAspect.value
+  if (!newH || !aspect) return
+  _adjustingSvgDim = true
+  svgWidth.value = Math.max(1, Math.round(newH * aspect))
+  _adjustingSvgDim = false
+})
+
 async function detectSvgIntrinsicAspectFromFile(
   file: File,
 ): Promise<number | undefined> {
@@ -784,25 +801,6 @@ function openFormatSelectDialog(item: {
       }
     }
   })()
-
-  // Keep dimensions in sync when user wants to preserve aspect ratio
-  watch(svgWidth, (newW) => {
-    if (!svgMaintainAspect.value || _adjustingSvgDim) return
-    const aspect = svgIntrinsicAspect.value
-    if (!newW || !aspect) return
-    _adjustingSvgDim = true
-    svgHeight.value = Math.max(1, Math.round(newW / aspect))
-    _adjustingSvgDim = false
-  })
-
-  watch(svgHeight, (newH) => {
-    if (!svgMaintainAspect.value || _adjustingSvgDim) return
-    const aspect = svgIntrinsicAspect.value
-    if (!newH || !aspect) return
-    _adjustingSvgDim = true
-    svgWidth.value = Math.max(1, Math.round(newH * aspect))
-    _adjustingSvgDim = false
-  })
   // 获取app-container元素
   appContainer.value = document.querySelector('.app-container') as HTMLElement
   appElement.value = document.querySelector('#app') as HTMLElement

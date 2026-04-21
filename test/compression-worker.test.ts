@@ -135,9 +135,8 @@ describe('compressionWorkerManager', () => {
       data: { initialized: false },
     })
 
-    const { compressionWorkerManager } = await import(
-      '../src/utils/compressionWorker'
-    )
+    const { compressionWorkerManager } =
+      await import('../src/utils/compressionWorker')
 
     await compressionWorkerManager.waitForInitialization()
 
@@ -153,9 +152,8 @@ describe('compressionWorkerManager', () => {
       data: { initialized: true },
     })
 
-    const { compressionWorkerManager } = await import(
-      '../src/utils/compressionWorker'
-    )
+    const { compressionWorkerManager } =
+      await import('../src/utils/compressionWorker')
 
     await compressionWorkerManager.waitForInitialization()
 
@@ -185,9 +183,8 @@ describe('compressionWorkerManager', () => {
       data: { buffer: responseBuffer, type: 'image/png' },
     })
 
-    const { compressionWorkerManager } = await import(
-      '../src/utils/compressionWorker'
-    )
+    const { compressionWorkerManager } =
+      await import('../src/utils/compressionWorker')
 
     await compressionWorkerManager.waitForInitialization()
 
@@ -206,9 +203,8 @@ describe('compressionWorkerManager', () => {
       data: { message: 'boom' },
     })
 
-    const { compressionWorkerManager } = await import(
-      '../src/utils/compressionWorker'
-    )
+    const { compressionWorkerManager } =
+      await import('../src/utils/compressionWorker')
 
     await compressionWorkerManager.waitForInitialization()
 

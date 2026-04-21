@@ -53,9 +53,8 @@ describe('buildConversionColumn', () => {
       compress,
     }))
 
-    const { buildConversionColumn } = await import(
-      '../src/orchestrators/compareConversion'
-    )
+    const { buildConversionColumn } =
+      await import('../src/orchestrators/compareConversion')
 
     const file = new File(['original'], 'test.png', { type: 'image/png' })
     const result = await buildConversionColumn({
@@ -93,9 +92,8 @@ describe('buildConversionColumn', () => {
       assessQuality: vi.fn(),
     }))
 
-    const { buildConversionColumn } = await import(
-      '../src/orchestrators/compareConversion'
-    )
+    const { buildConversionColumn } =
+      await import('../src/orchestrators/compareConversion')
 
     const file = new File(['o'.repeat(100)], 'test.png', { type: 'image/png' })
     const baseline = new File(['b'.repeat(50)], 'baseline.webp', {
@@ -143,9 +141,8 @@ describe('buildConversionColumn', () => {
       assessQuality,
     }))
 
-    const { buildConversionColumn } = await import(
-      '../src/orchestrators/compareConversion'
-    )
+    const { buildConversionColumn } =
+      await import('../src/orchestrators/compareConversion')
 
     const file = new File(['o'.repeat(100)], 'test.png', { type: 'image/png' })
     const baseline = new File(['b'.repeat(80)], 'baseline.webp', {

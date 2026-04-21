@@ -129,9 +129,8 @@ describe('objective compression', () => {
   })
 
   it('[OBJ-001] compressWithTools rejects objective mode explicitly', async () => {
-    const { ToolRegistry, compressWithTools } = await import(
-      '../src/compressWithTools'
-    )
+    const { ToolRegistry, compressWithTools } =
+      await import('../src/compressWithTools')
 
     const registry = new ToolRegistry()
     registry.registerTool(

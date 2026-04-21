@@ -165,9 +165,8 @@ describe('deployment configuration', () => {
     )
 
     const { configureCompressionDeployment } = await import('../src/deployment')
-    const { ensureWasmLoaded } = await import(
-      '../src/tools/compressWithJsquash'
-    )
+    const { ensureWasmLoaded } =
+      await import('../src/tools/compressWithJsquash')
 
     configureCompressionDeployment({
       mode: 'offline-strict',

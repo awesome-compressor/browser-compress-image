@@ -36,12 +36,21 @@ import { download } from 'lazy-js-utils'
 import { h, onMounted, onUnmounted, ref, triggerRef } from 'vue'
 import {
   compress,
-  compressEnhanced,
+  compressDecision,
+  compressJob,
   compressionQueue,
   getCompressionStats,
   memoryManager,
   waitForCompressionInitialization,
   detectFileFormat,
+} from '../../src'
+import type {
+  CompressionGoal,
+  CompressionJobStage,
+  CompressionObjectiveDecision,
+  CompressionOutputDecision,
+  CompressionOutputFormat,
+  MultipleCompressResults,
 } from '../../src'
 
 import CropPage from './CropPage.vue'
@@ -100,6 +109,12 @@ interface ImageItem {
   // SVG-specific properties
   isSvg?: boolean // 标记是否为SVG文件
   sourceFormat?: string // 源文件格式（用于检测SVG）
+  bestTool?: string
+  compressionDuration?: number
+  outputDecision?: CompressionOutputDecision
+  objectiveDecision?: CompressionObjectiveDecision
+  taskStage?: 'uploading' | CompressionJobStage
+  processingUiMode?: 'default' | 'subtle'
 }
 
 // FormatConversion组件引用
@@ -115,6 +130,13 @@ interface ToolCompareItem {
   duration: number
   success: boolean
   error?: string
+}
+
+interface CompareFinalResult {
+  blob: Blob
+  url: string
+  size: number
+  mime: string
 }
 
 // 压缩统计信息接口
@@ -145,13 +167,14 @@ const croppingIndex = ref<number | null>(null)
 const cropPageParentScrollTop = ref(0)
 
 function openCropPage(item: ImageItem) {
-  if (!item.compressedUrl) {
+  const effectiveUrl = getEffectiveItemUrl(item)
+  if (!effectiveUrl) {
     ElMessage.warning('Please wait for compression to finish before cropping')
     return
   }
   croppingIndex.value = imageItems.value.findIndex((it) => it.id === item.id)
   cropOriginalUrl.value = item.originalUrl
-  cropCompressedUrl.value = item.compressedUrl
+  cropCompressedUrl.value = effectiveUrl
   // compute current scroll position of the app container so the modal can align
   const appContainerEl = document.querySelector(
     '.app-container',
@@ -186,22 +209,56 @@ const compareLoading = ref(false)
 const compareTargetName = ref('')
 const compareBestTool = ref('')
 const compareResults = ref<ToolCompareItem[]>([])
+const compareOutputDecision = ref<CompressionOutputDecision | undefined>()
+const compareObjectiveDecision = ref<CompressionObjectiveDecision | undefined>()
+const compareFinalResult = ref<CompareFinalResult | null>(null)
+const compareTotalDuration = ref<number>(0)
 let compareObjectUrls: string[] = []
 const compareTargetIndex = ref<number>(-1)
+let compareRequestId = 0
+const compareRejectedReasons = computed(() => {
+  const reasons = [
+    ...(compareOutputDecision.value?.rejectedReasons || []),
+    ...(compareObjectiveDecision.value?.rejectedReasons || []),
+  ].filter(Boolean)
+
+  return [...new Set(reasons)]
+})
+
+let formatDialogRequestId = 0
 
 function openFormatSelectDialog(item: ImageItem) {
   // 使用FormatConversion组件打开格式选择对话框
   if (formatConversionRef.value) {
-    formatConversionRef.value.openFormatSelectDialog({
-      id: item.id,
-      file: item.file,
-      originalUrl: item.originalUrl,
-      quality: item.quality,
-    })
+    const requestId = ++formatDialogRequestId
+    ;(async () => {
+      try {
+        const currentFile = await createDisplayedFileForItem(item)
+        if (requestId !== formatDialogRequestId || !formatConversionRef.value) {
+          return
+        }
+        formatConversionRef.value.openFormatSelectDialog({
+          id: item.id,
+          file: currentFile,
+          originalUrl: getEffectiveItemUrl(item) || item.originalUrl,
+          quality: item.quality,
+        })
+      } catch (error) {
+        if (requestId !== formatDialogRequestId) {
+          return
+        }
+        ElMessage.error(
+          error instanceof Error
+            ? error.message
+            : 'Failed to open format conversion',
+        )
+      }
+    })()
   }
 }
 
 async function openComparePanel(item: ImageItem) {
+  const requestId = ++compareRequestId
   // 打开面板并加载数据
   showComparePanel.value = true
   compareLoading.value = true
@@ -212,24 +269,51 @@ async function openComparePanel(item: ImageItem) {
 
   // 清理旧的对象URL
   cleanupCompareObjectUrls()
+  compareOutputDecision.value = undefined
+  compareObjectiveDecision.value = undefined
+  compareFinalResult.value = null
+  compareTotalDuration.value = 0
 
   try {
     // 过滤出启用的工具配置
     const enabledToolConfigs = getEnabledToolConfigs()
+    const resolvedSourceFile = await createDisplayedFileForItem(item)
+    if (requestId !== compareRequestId) {
+      return
+    }
 
     // 使用核心 API 获取所有工具结果
-    const all = (await compress(item.file, {
+    const all = (await compress(resolvedSourceFile, {
       quality: item.quality,
       preserveExif: preserveExif.value,
+      output: outputMode.value,
+      objective: buildObjectiveOptions(),
       returnAllResults: true,
       type: 'blob',
       toolConfigs: enabledToolConfigs,
-    })) as any
+    })) as MultipleCompressResults<'blob'>
+    if (requestId !== compareRequestId) {
+      return
+    }
 
     compareBestTool.value = all.bestTool || ''
+    compareOutputDecision.value = all.outputDecision
+    compareObjectiveDecision.value = all.objectiveDecision
+    compareTotalDuration.value = all.totalDuration || 0
+
+    if (all.bestResult instanceof Blob) {
+      const url = URL.createObjectURL(all.bestResult)
+      compareObjectUrls.push(url)
+      compareFinalResult.value = {
+        blob: all.bestResult,
+        url,
+        size: all.bestResult.size,
+        mime: all.bestResult.type,
+      }
+    }
 
     // 构建 UI 结果并生成预览 URL
-    compareResults.value = (all.allResults || []).map((r: any) => {
+    compareResults.value = (all.allResults || []).map((r) => {
       let url: string | undefined
       if (r.success && r.result instanceof Blob) {
         url = URL.createObjectURL(r.result)
@@ -247,17 +331,31 @@ async function openComparePanel(item: ImageItem) {
       } as ToolCompareItem
     })
   } catch (err) {
+    if (requestId !== compareRequestId) {
+      return
+    }
     console.error('Compare tools failed:', err)
+    compareOutputDecision.value = undefined
+    compareObjectiveDecision.value = undefined
+    compareFinalResult.value = null
+    compareTotalDuration.value = 0
     ElMessage.error(
       err instanceof Error ? err.message : 'Failed to compare tools',
     )
   } finally {
-    compareLoading.value = false
+    if (requestId === compareRequestId) {
+      compareLoading.value = false
+    }
   }
 }
 
 function closeComparePanel() {
+  compareRequestId++
   showComparePanel.value = false
+  compareOutputDecision.value = undefined
+  compareObjectiveDecision.value = undefined
+  compareFinalResult.value = null
+  compareTotalDuration.value = 0
   // 无需手动恢复滚动，交由 el-dialog 的 lock-scroll 处理
   // 关闭时清理生成的对象URL，避免内存泄漏
   cleanupCompareObjectUrls()
@@ -268,6 +366,21 @@ function cleanupCompareObjectUrls() {
     compareObjectUrls.forEach((u) => URL.revokeObjectURL(u))
     compareObjectUrls = []
   }
+}
+
+function clearAppliedReplacement(item: ImageItem) {
+  if (item.replacedUrl) {
+    try {
+      URL.revokeObjectURL(item.replacedUrl)
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  item.replacedUrl = undefined
+  item.replacedBlob = undefined
+  item.replacedMime = undefined
+  item.replacedSize = undefined
 }
 
 // 应用选中的对比结果到当前图片
@@ -283,14 +396,48 @@ function applyCompareResult(r: ToolCompareItem) {
   }
 
   const newUrl = URL.createObjectURL(r.blob)
+  clearAppliedReplacement(item)
   updateImageItem(item, {
     compressedUrl: newUrl,
     compressedSize: r.compressedSize,
     compressionRatio:
       ((item.originalSize - r.compressedSize) / item.originalSize) * 100,
+    bestTool: r.tool,
+    compressionDuration: r.duration,
+    outputDecision: undefined,
+    objectiveDecision: undefined,
   })
 
   ElMessage.success(`Applied result from ${r.tool}`)
+}
+
+function applyCompareFinalDecision() {
+  const idx = compareTargetIndex.value
+  if (idx < 0 || idx >= imageItems.value.length || !compareFinalResult.value) {
+    return
+  }
+
+  const item = imageItems.value[idx]
+  if (item.compressedUrl) {
+    URL.revokeObjectURL(item.compressedUrl)
+  }
+
+  const newUrl = URL.createObjectURL(compareFinalResult.value.blob)
+  clearAppliedReplacement(item)
+  updateImageItem(item, {
+    compressedUrl: newUrl,
+    compressedSize: compareFinalResult.value.size,
+    compressionRatio:
+      ((item.originalSize - compareFinalResult.value.size) /
+        item.originalSize) *
+      100,
+    bestTool: compareBestTool.value,
+    compressionDuration: compareTotalDuration.value,
+    outputDecision: compareOutputDecision.value,
+    objectiveDecision: compareObjectiveDecision.value,
+  })
+
+  ElMessage.success('Applied final decision result')
 }
 
 // 压缩进度状态
@@ -309,6 +456,22 @@ const imageTransform = ref({ x: 0, y: 0 }) // 图片位移
 const preserveExif = ref(false) // EXIF 信息保留选项
 const globalQuality = ref(0.6) // 全局质量设置
 const globalQualityDragging = ref(0.6) // 拖动过程中的临时质量值
+const outputMode = ref<CompressionOutputFormat>('auto')
+const objectiveEnabled = ref(false)
+const objectiveTargetKb = ref(300)
+const objectiveGoal = ref<CompressionGoal>('balanced')
+const outputOptions: CompressionOutputFormat[] = [
+  'preserve',
+  'auto',
+  'jpeg',
+  'png',
+  'webp',
+]
+const objectiveGoalOptions: CompressionGoal[] = [
+  'fastest',
+  'balanced',
+  'visually-lossless',
+]
 
 // 设置面板相关状态
 const showSettingsPanel = ref(false)
@@ -324,72 +487,110 @@ const compressionStats = ref<CompressionStatsInfo>({
   currentConcurrency: 0,
 })
 
-// Per-image AbortController storage for cancel support in UI
-const abortControllers = new Map<string, AbortController>()
+const itemTaskHandles = new Map<string, { cancel: () => void }>()
+const cancelledQueuedItems = new Set<string>()
 
-function createControllerForItem(itemId: string) {
-  const controller = new AbortController()
-  abortControllers.set(itemId, controller)
-  return controller
+function setTaskHandle(itemId: string, handle: { cancel: () => void }) {
+  itemTaskHandles.set(itemId, handle)
+  return handle
 }
 
-function cleanupController(itemId: string) {
-  const c = abortControllers.get(itemId)
-  if (c) {
-    try {
-      // remove any references
-      c.abort()
-    } catch (e) {
-      // ignore
-    }
-    abortControllers.delete(itemId)
+function clearTaskHandle(itemId: string) {
+  itemTaskHandles.delete(itemId)
+}
+
+function revokeImageItemUrls(item: ImageItem) {
+  try {
+    if (item.originalUrl) URL.revokeObjectURL(item.originalUrl)
+    if (item.compressedUrl) URL.revokeObjectURL(item.compressedUrl)
+    if (item.replacedUrl) URL.revokeObjectURL(item.replacedUrl)
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function removeImageItem(itemId: string) {
+  const idx = imageItems.value.findIndex((it) => it.id === itemId)
+  if (idx === -1) {
+    return false
+  }
+
+  const removed = imageItems.value.splice(idx, 1)[0]
+  revokeImageItemUrls(removed)
+
+  if (currentImageIndex.value >= imageItems.value.length) {
+    currentImageIndex.value = Math.max(0, imageItems.value.length - 1)
+  }
+
+  return true
+}
+
+function isCompressionCancellation(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  return (
+    error.name === 'AbortError' ||
+    error.message === 'Canceled by user' ||
+    error.message.includes('Task cancelled')
+  )
+}
+
+function getItemTaskLabel(item: ImageItem) {
+  switch (item.taskStage) {
+    case 'uploading':
+    case 'queued':
+      return 'Queued...'
+    case 'preprocessing':
+      return 'Preprocessing...'
+    case 'compressing':
+      return 'Compressing...'
+    case 'converting':
+      return 'Converting...'
+    case 'cancelled':
+      return 'Cancelled'
+    case 'failed':
+      return 'Failed'
+    case 'done':
+      return 'Done'
+    default:
+      return item.isUploading ? 'Queued...' : 'Compressing...'
   }
 }
 
 function cancelCompression(item: ImageItem) {
-  const c = abortControllers.get(item.id)
-  if (!c) return
-  // Always abort underlying controller
-  try {
-    c.abort()
-  } catch (e) {
-    /* ignore */
-  }
-  abortControllers.delete(item.id)
-
-  console.log('cancelCompression called for', item.id, item.file.name, {
-    isUploading: item.isUploading,
-    isCompressing: item.isCompressing,
-  })
+  const task = itemTaskHandles.get(item.id)
 
   if (item.isUploading) {
-    // If still uploading, remove item and revoke urls
-    const idx = imageItems.value.findIndex((it) => it.id === item.id)
-    if (idx !== -1) {
-      const removed = imageItems.value.splice(idx, 1)[0]
-      try {
-        if (removed.originalUrl) URL.revokeObjectURL(removed.originalUrl)
-        if (removed.compressedUrl) URL.revokeObjectURL(removed.compressedUrl)
-      } catch (e) {
-        /* ignore */
-      }
-    }
+    cancelledQueuedItems.add(item.id)
+    clearTaskHandle(item.id)
+    removeImageItem(item.id)
+
     if (compressionProgress.value.total > 0) {
       compressionProgress.value.total = Math.max(
         0,
         compressionProgress.value.total - 1,
       )
     }
-    ElMessage({ message: `Upload canceled: ${item.file.name}`, type: 'info' })
+    ElMessage({
+      message: `Removed queued image: ${item.file.name}`,
+      type: 'info',
+    })
     return
   }
 
-  // If compressing, mark as canceled
+  if (task) {
+    task.cancel()
+    clearTaskHandle(item.id)
+  }
+
   if (item.isCompressing) {
     updateImageItem(item, {
       isCompressing: false,
       compressionError: 'Canceled by user',
       isUploading: false,
+      taskStage: 'cancelled',
     })
     ElMessage({
       message: `Canceled compression: ${item.file.name}`,
@@ -403,6 +604,7 @@ function cancelCompression(item: ImageItem) {
     compressionError: 'Canceled by user',
     isUploading: false,
     isCompressing: false,
+    taskStage: 'cancelled',
   })
   ElMessage({ message: `Canceled: ${item.file.name}`, type: 'info' })
 }
@@ -417,26 +619,9 @@ function cancelAllUploads() {
 
   console.log('cancelAllUploads: canceling', uploading.length, 'items')
   for (const item of [...uploading]) {
-    const c = abortControllers.get(item.id)
-    if (c) {
-      try {
-        c.abort()
-      } catch (e) {
-        /* ignore */
-      }
-      abortControllers.delete(item.id)
-    }
-
-    const idx = imageItems.value.findIndex((it) => it.id === item.id)
-    if (idx !== -1) {
-      const removed = imageItems.value.splice(idx, 1)[0]
-      try {
-        if (removed.originalUrl) URL.revokeObjectURL(removed.originalUrl)
-        if (removed.compressedUrl) URL.revokeObjectURL(removed.compressedUrl)
-      } catch (e) {
-        /* ignore */
-      }
-    }
+    cancelledQueuedItems.add(item.id)
+    clearTaskHandle(item.id)
+    removeImageItem(item.id)
   }
 
   // adjust total
@@ -477,8 +662,7 @@ function openSettingsPanel() {
 }
 
 function isToolConfigConfigured(config: ToolConfig) {
-  if (config.name === 'tinypng')
-    return config.key.trim().length > 0
+  if (config.name === 'tinypng') return config.key.trim().length > 0
   if (config.name === 'browser-image-compression')
     return (config.libURL || '').trim().length > 0
   return false
@@ -615,7 +799,7 @@ async function handleGlobalQualityChange(newGlobalQuality: number) {
       item.qualityDragging = newGlobalQuality // 同步单个图片的拖动状态
       // 如果图片没有在压缩中，自动重新压缩
       if (!item.isCompressing) {
-        await compressImage(item)
+        await compressImage(item, { uiMode: 'subtle' })
       }
     })
 
@@ -648,7 +832,7 @@ async function resetImageQualityToGlobal(item: ImageItem) {
 
   // 如果图片没有在压缩中，自动重新压缩
   if (!item.isCompressing) {
-    await compressImage(item)
+    await compressImage(item, { uiMode: 'subtle' })
   }
 }
 
@@ -672,7 +856,7 @@ async function handleImageQualityChange(
 
   // 如果图片没有在压缩中，自动重新压缩
   if (!item.isCompressing) {
-    await compressImage(item)
+    await compressImage(item, { uiMode: 'subtle' })
   }
 }
 
@@ -782,17 +966,70 @@ function filterAndNotifyUnsupportedFiles(files: File[]): File[] {
 // 计算属性
 const hasImages = computed(() => imageItems.value.length > 0)
 const currentImage = computed(() => imageItems.value[currentImageIndex.value])
+
+function getEffectiveItemSize(item: ImageItem) {
+  return item.replacedSize ?? item.compressedSize ?? item.originalSize
+}
+
+function getEffectiveItemUrl(item: ImageItem) {
+  return item.replacedUrl || item.compressedUrl
+}
+
+function getEffectiveCompressionRatio(item: ImageItem) {
+  if (item.originalSize === 0) {
+    return 0
+  }
+
+  return (
+    ((item.originalSize - getEffectiveItemSize(item)) / item.originalSize) * 100
+  )
+}
+
+function getFileNameForMime(fileName: string, mime?: string) {
+  if (!mime) {
+    return fileName
+  }
+
+  const nameWithoutExt = fileName.replace(/\.[^/.]+$/, '')
+  const ext = mime.replace('image/', '').replace('+xml', '')
+  const normalizedExt = ext === 'jpeg' ? 'jpg' : ext
+  return `${nameWithoutExt}.${normalizedExt}`
+}
+
+async function createDisplayedFileForItem(item: ImageItem) {
+  if (item.replacedBlob instanceof Blob) {
+    const mime = item.replacedBlob.type || item.replacedMime || item.file.type
+    return new File(
+      [item.replacedBlob],
+      getFileNameForMime(item.file.name, mime),
+      { type: mime },
+    )
+  }
+
+  const effectiveUrl = getEffectiveItemUrl(item)
+  if (effectiveUrl && effectiveUrl !== item.originalUrl) {
+    const response = await fetch(effectiveUrl)
+    const blob = await response.blob()
+    const mime = blob.type || item.file.type
+    return new File([blob], getFileNameForMime(item.file.name, mime), {
+      type: mime,
+    })
+  }
+
+  return item.file
+}
+
 const totalOriginalSize = computed(() =>
   imageItems.value.reduce((sum, item) => sum + item.originalSize, 0),
 )
-const totalCompressedSize = computed(() =>
-  imageItems.value.reduce((sum, item) => sum + (item.compressedSize || 0), 0),
+const totalEffectiveSize = computed(() =>
+  imageItems.value.reduce((sum, item) => sum + getEffectiveItemSize(item), 0),
 )
 
 const totalCompressionRatio = computed(() => {
   if (totalOriginalSize.value === 0) return 0
   return (
-    ((totalOriginalSize.value - totalCompressedSize.value) /
+    ((totalOriginalSize.value - totalEffectiveSize.value) /
       totalOriginalSize.value) *
     100
   )
@@ -803,10 +1040,31 @@ const compressedCount = computed(
       (item) => item.compressedUrl && !item.compressionError,
     ).length,
 )
+const downloadableCount = computed(
+  () =>
+    imageItems.value.filter(
+      (item) => getEffectiveItemUrl(item) && !item.compressionError,
+    ).length,
+)
+const failedCount = computed(
+  () => imageItems.value.filter((item) => item.compressionError).length,
+)
+const activeCount = computed(
+  () =>
+    imageItems.value.filter((item) => item.isCompressing || item.isUploading)
+      .length,
+)
 const allCompressed = computed(
   () =>
     imageItems.value.length > 0 &&
-    compressedCount.value === imageItems.value.length,
+    downloadableCount.value === imageItems.value.length &&
+    failedCount.value === 0 &&
+    activeCount.value === 0,
+)
+const downloadButtonLabel = computed(() =>
+  allCompressed.value
+    ? `Download All (${downloadableCount.value})`
+    : `Download Ready (${downloadableCount.value})`,
 )
 
 // 检查是否可以添加新的工具配置
@@ -1230,8 +1488,8 @@ async function handlePaste(e: ClipboardEvent) {
       const svgFile =
         createSvgFileFromClipboardText(
           e.clipboardData?.getData('text/plain') || '',
-        )
-        || createSvgFileFromClipboardText(
+        ) ||
+        createSvgFileFromClipboardText(
           e.clipboardData?.getData('text/html') || '',
         )
 
@@ -1435,16 +1693,11 @@ async function addNewImages(files: File[]) {
       qualityDragging: globalQuality.value,
       isSvg,
       sourceFormat,
+      taskStage: 'uploading',
     }
   })
 
   // 先添加到列表中显示加载/上传状态
-  // create upload controllers for each new item so user can cancel during "upload"
-  newItems.forEach((it) => {
-    it.isUploading = true
-    it.isCompressing = false
-    createControllerForItem(it.id)
-  })
   imageItems.value.push(...newItems)
 
   try {
@@ -1471,13 +1724,21 @@ async function addNewImages(files: File[]) {
       const file = files[i]
       const item = newItems[i]
 
+      if (
+        cancelledQueuedItems.has(item.id) ||
+        !imageItems.value.some((it) => it.id === item.id)
+      ) {
+        cancelledQueuedItems.delete(item.id)
+        continue
+      }
+
       try {
-        // transition from upload -> process: if item was uploading and not canceled
-        // remove upload controller and create a fresh controller for processing
-        cleanupController(item.id)
-        // mark as processing now
-        updateImageItem(item, { isUploading: false, isCompressing: true })
-        const controller = createControllerForItem(item.id)
+        updateImageItem(item, {
+          isUploading: false,
+          isCompressing: true,
+          compressionError: undefined,
+          taskStage: 'compressing',
+        })
 
         let result: Blob
 
@@ -1494,7 +1755,12 @@ async function addNewImages(files: File[]) {
             compressedUrl: item.originalUrl, // Use original URL since no compression needed
             compressedSize: item.originalSize, // Original size
             compressionRatio: 0, // No compression for SVG
+            bestTool: undefined,
+            compressionDuration: undefined,
+            outputDecision: undefined,
+            objectiveDecision: undefined,
             isCompressing: false,
+            taskStage: 'done',
           })
 
           console.log(`✅ SVG processed ${i + 1}/${files.length}: ${file.name}`)
@@ -1511,17 +1777,26 @@ async function addNewImages(files: File[]) {
             }
           })
         } else {
-          // Regular image files - use compression
-          result = await compressEnhanced(file, {
+          const controller = new AbortController()
+          setTaskHandle(item.id, {
+            cancel: () => controller.abort(),
+          })
+
+          const decision = await compressDecision(file, {
             quality: globalQuality.value,
             preserveExif: preserveExif.value,
             toolConfigs: enabledToolConfigs,
-            useWorker: false,
-            useQueue: true,
-            timeout: deviceTimeout, // 使用设备适配的超时时间
+            output: outputMode.value,
+            objective: buildObjectiveOptions(),
+            timeoutMs: deviceTimeout,
             signal: controller.signal,
             type: 'blob',
           })
+          if (controller.signal.aborted) {
+            throw new Error('Canceled by user')
+          }
+
+          result = decision.result
 
           // 更新单个图片的压缩结果
           updateImageItem(item, {
@@ -1529,7 +1804,12 @@ async function addNewImages(files: File[]) {
             compressedSize: result.size,
             compressionRatio:
               ((item.originalSize - result.size) / item.originalSize) * 100,
+            bestTool: decision.bestTool,
+            compressionDuration: decision.totalDuration,
+            outputDecision: decision.outputDecision,
+            objectiveDecision: decision.objectiveDecision,
             isCompressing: false,
+            taskStage: 'done',
           })
 
           console.log(`✅ Compressed ${i + 1}/${files.length}: ${file.name}`)
@@ -1540,19 +1820,20 @@ async function addNewImages(files: File[]) {
         // 实时更新进度
         compressionProgress.value.current = i + 1
 
-        // cleanup controller after success
-        cleanupController(item.id)
+        clearTaskHandle(item.id)
       } catch (error) {
         console.error(`❌ Failed to process ${file.name}:`, error)
-        item.isCompressing = false
-        // ensure controller cleaned on failure
-        cleanupController(item.id)
-        item.isCompressing = false
-        item.isUploading = false
-        // ensure controller cleaned on failure
-        cleanupController(item.id)
-        item.compressionError =
-          error instanceof Error ? error.message : 'Processing failed'
+        clearTaskHandle(item.id)
+        updateImageItem(item, {
+          isCompressing: false,
+          isUploading: false,
+          taskStage: isCompressionCancellation(error) ? 'cancelled' : 'failed',
+          compressionError: isCompressionCancellation(error)
+            ? 'Canceled by user'
+            : error instanceof Error
+              ? error.message
+              : 'Processing failed',
+        })
 
         // 即使失败也要更新进度
         compressionProgress.value.current = i + 1
@@ -1593,26 +1874,34 @@ async function addNewImages(files: File[]) {
 }
 
 // 压缩单个图片 - 使用增强的压缩API
-async function compressImage(item: ImageItem): Promise<void> {
+async function compressImage(
+  item: ImageItem,
+  options?: { uiMode?: 'default' | 'subtle' },
+): Promise<void> {
   if (item.isCompressing) return
 
   item.isCompressing = true
   item.compressionError = undefined
+  item.taskStage = 'compressing'
+  item.processingUiMode = options?.uiMode || 'default'
 
   try {
-    // create abort controller for this item
-    const controller = createControllerForItem(item.id)
-
     // Handle SVG files differently
     if (item.isSvg) {
       // SVG files don't need compression, just mark as processed
       console.log(`📄 SVG reprocessing skipped: ${item.file.name}`)
 
       // Keep the original as the "compressed" version
+      clearAppliedReplacement(item)
       updateImageItem(item, {
         compressedUrl: item.originalUrl,
         compressedSize: item.originalSize,
         compressionRatio: 0, // No compression for SVG
+        bestTool: undefined,
+        compressionDuration: undefined,
+        outputDecision: undefined,
+        objectiveDecision: undefined,
+        taskStage: 'done',
       })
 
       // 强制触发响应式更新
@@ -1623,18 +1912,73 @@ async function compressImage(item: ImageItem): Promise<void> {
     // 过滤出启用的工具配置
     const enabledToolConfigs = getEnabledToolConfigs()
 
-    // 使用增强的压缩函数，默认走队列 + 主线程压缩
-    const compressedBlob = await compressEnhanced(item.file, {
-      quality: item.quality, // 直接使用图片的质量设置（已经是0-1范围）
-      preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
-      toolConfigs: enabledToolConfigs, // 传入工具配置
-      preprocess: item.preprocess, // 预处理：裁剪/旋转/缩放
-      useWorker: false, // Worker 路径仍在完善，当前默认走主线程
-      useQueue: true, // 启用队列管理
-      timeout: getDeviceBasedTimeout(30000), // 设备适配的超时时间
-      signal: controller.signal,
-      type: 'blob', // 确保返回Blob类型
-    })
+    let compressedBlob: Blob
+    let bestTool: string | undefined
+    let compressionDuration: number | undefined
+    let outputDecision: CompressionOutputDecision | undefined
+    let objectiveDecision: CompressionObjectiveDecision | undefined
+
+    if (item.preprocess) {
+      updateImageItem(item, {
+        bestTool: undefined,
+        compressionDuration: undefined,
+        outputDecision: undefined,
+        objectiveDecision: undefined,
+      })
+
+      const job = compressJob(item.file, {
+        quality: item.quality, // 直接使用图片的质量设置（已经是0-1范围）
+        preserveExif: preserveExif.value, // 使用全局 EXIF 保留设置
+        toolConfigs: enabledToolConfigs, // 传入工具配置
+        output: outputMode.value,
+        objective: buildObjectiveOptions(),
+        preprocess: item.preprocess, // 预处理：裁剪/旋转/缩放
+        useWorker: false, // Worker 路径仍在完善，当前默认走主线程
+        useQueue: true, // 启用队列管理
+        timeout: getDeviceBasedTimeout(30000), // 设备适配的超时时间
+        type: 'blob', // 确保返回Blob类型
+      })
+      const stopStage = job.onStageChange((stage) => {
+        item.taskStage = stage
+        triggerRef(imageItems)
+      })
+      const stopMetrics = job.onMetrics((metrics) => {
+        if (metrics.durationMs !== undefined) {
+          compressionDuration = metrics.durationMs
+          item.compressionDuration = metrics.durationMs
+          triggerRef(imageItems)
+        }
+      })
+      setTaskHandle(item.id, job)
+      try {
+        compressedBlob = await job.promise
+      } finally {
+        stopStage()
+        stopMetrics()
+      }
+    } else {
+      const controller = new AbortController()
+      setTaskHandle(item.id, {
+        cancel: () => controller.abort(),
+      })
+
+      const decision = await compressDecision(item.file, {
+        quality: item.quality,
+        preserveExif: preserveExif.value,
+        toolConfigs: enabledToolConfigs,
+        output: outputMode.value,
+        objective: buildObjectiveOptions(),
+        timeoutMs: getDeviceBasedTimeout(30000),
+        signal: controller.signal,
+        type: 'blob',
+      })
+
+      compressedBlob = decision.result
+      bestTool = decision.bestTool
+      compressionDuration = decision.totalDuration
+      outputDecision = decision.outputDecision
+      objectiveDecision = decision.objectiveDecision
+    }
 
     if (!compressedBlob) {
       ElMessage({
@@ -1648,17 +1992,29 @@ async function compressImage(item: ImageItem): Promise<void> {
       URL.revokeObjectURL(item.compressedUrl)
     }
 
+    clearAppliedReplacement(item)
     updateImageItem(item, {
       compressedUrl: URL.createObjectURL(compressedBlob),
       compressedSize: compressedBlob.size,
       compressionRatio:
         ((item.originalSize - compressedBlob.size) / item.originalSize) * 100,
+      bestTool,
+      compressionDuration,
+      outputDecision,
+      objectiveDecision,
+      taskStage: 'done',
     })
 
     // 强制触发响应式更新
     triggerRef(imageItems)
   } catch (error) {
     console.error('Enhanced processing error:', error)
+    if (isCompressionCancellation(error)) {
+      item.taskStage = 'cancelled'
+      item.compressionError = 'Canceled by user'
+      return
+    }
+    item.taskStage = 'failed'
     item.compressionError =
       error instanceof Error ? error.message : 'Processing failed'
 
@@ -1669,8 +2025,8 @@ async function compressImage(item: ImageItem): Promise<void> {
     })
   } finally {
     item.isCompressing = false
-    // cleanup controller if still present
-    cleanupController(item.id)
+    item.processingUiMode = undefined
+    clearTaskHandle(item.id)
   }
 }
 
@@ -1725,6 +2081,10 @@ function startPerformanceMonitoring() {
 
 // 处理 EXIF 保留选项变化
 async function handlePreserveExifChange() {
+  await recompressAllImages()
+}
+
+async function recompressAllImages() {
   // 重新压缩所有已存在的图片，使用新的 EXIF 设置
   for (const item of imageItems.value) {
     if (!item.isCompressing) {
@@ -1733,20 +2093,92 @@ async function handlePreserveExifChange() {
   }
 }
 
+async function retryFailedImages() {
+  const failedItems = imageItems.value.filter(
+    (item) => item.compressionError && !item.isCompressing,
+  )
+
+  for (const item of failedItems) {
+    await compressImage(item)
+  }
+}
+
+async function handleDecisionSettingsChange() {
+  objectiveTargetKb.value = Math.max(
+    1,
+    Math.round(objectiveTargetKb.value || 1),
+  )
+  await recompressAllImages()
+}
+
+function buildObjectiveOptions() {
+  if (!objectiveEnabled.value) {
+    return undefined
+  }
+
+  return {
+    targetBytes: Math.max(1, Math.round(objectiveTargetKb.value || 1)) * 1024,
+    goal: objectiveGoal.value,
+    output: outputMode.value,
+  }
+}
+
+function formatOutputModeLabel(mode: CompressionOutputFormat) {
+  switch (mode) {
+    case 'preserve':
+      return 'Preserve'
+    case 'auto':
+      return 'Auto'
+    default:
+      return mode.toUpperCase()
+  }
+}
+
+function formatDecisionOutput(
+  selected?: CompressionOutputDecision['selected'],
+) {
+  if (!selected) {
+    return ''
+  }
+
+  return selected === 'preserve' ? 'Preserve' : selected.toUpperCase()
+}
+
+function formatObjectiveGoalLabel(goal: CompressionGoal) {
+  switch (goal) {
+    case 'visually-lossless':
+      return 'Lossless'
+    case 'balanced':
+      return 'Balanced'
+    case 'fastest':
+      return 'Fastest'
+    default:
+      return goal
+  }
+}
+
+function hasDecisionFallback(item: ImageItem) {
+  return Boolean(
+    item.outputDecision?.usedFallback || item.objectiveDecision?.usedFallback,
+  )
+}
+
 // 删除单个图片
 function deleteImage(index: number) {
   const item = imageItems.value[index]
-  URL.revokeObjectURL(item.originalUrl)
-  if (item.compressedUrl) {
-    URL.revokeObjectURL(item.compressedUrl)
+  const task = itemTaskHandles.get(item.id)
+  if (item.isUploading) {
+    cancelledQueuedItems.add(item.id)
+    compressionProgress.value.total = Math.max(
+      0,
+      compressionProgress.value.total - 1,
+    )
   }
-  if (item.replacedUrl) {
-    try {
-      URL.revokeObjectURL(item.replacedUrl)
-    } catch (e) {
-      /* ignore */
-    }
+  if (task) {
+    task.cancel()
   }
+  clearTaskHandle(item.id)
+  revokeImageItemUrls(item)
 
   imageItems.value.splice(index, 1)
 
@@ -1761,24 +2193,16 @@ function clearAllImages() {
   console.log('Clearing all images with enhanced cleanup')
 
   try {
+    itemTaskHandles.forEach((task) => task.cancel())
+    itemTaskHandles.clear()
+    cancelledQueuedItems.clear()
+
     // 1. 清空压缩队列中的待处理任务
     clearQueue()
 
     // 2. 释放所有对象URL
     imageItems.value.forEach((item) => {
-      if (item.originalUrl) {
-        URL.revokeObjectURL(item.originalUrl)
-      }
-      if (item.compressedUrl) {
-        URL.revokeObjectURL(item.compressedUrl)
-      }
-      if (item.replacedUrl) {
-        try {
-          URL.revokeObjectURL(item.replacedUrl)
-        } catch (e) {
-          /* ignore */
-        }
-      }
+      revokeImageItemUrls(item)
     })
 
     // 3. 清空图片列表
@@ -1829,8 +2253,7 @@ function generateFolderName(): string {
 
 // 下载单个图片（保持原始文件名）
 async function downloadImage(item: ImageItem) {
-  // Prefer replacedUrl (user-applied conversion) or fall back to compressedUrl
-  const sourceUrl = item.replacedUrl || item.compressedUrl
+  const sourceUrl = getEffectiveItemUrl(item)
   if (!sourceUrl) return
 
   try {
@@ -1899,16 +2322,7 @@ function applyConversionToItem(payload: {
 function restoreReplacedImage(item: ImageItem) {
   if (!item.replacedUrl) return
 
-  try {
-    URL.revokeObjectURL(item.replacedUrl)
-  } catch (e) {
-    /* ignore */
-  }
-
-  item.replacedUrl = undefined
-  item.replacedBlob = undefined
-  item.replacedMime = undefined
-  item.replacedSize = undefined
+  clearAppliedReplacement(item)
 
   triggerRef(imageItems)
   ElMessage.info('Restored original uploaded image')
@@ -1920,8 +2334,7 @@ async function downloadAllImages() {
 
   // Prefer items that have either a replacedUrl (user-applied conversion) or compressedUrl
   const downloadableItems = imageItems.value.filter(
-    (item) =>
-      (item.replacedUrl || item.compressedUrl) && !item.compressionError,
+    (item) => getEffectiveItemUrl(item) && !item.compressionError,
   )
   if (downloadableItems.length === 0) {
     ElMessage({
@@ -1930,6 +2343,21 @@ async function downloadAllImages() {
     })
     return
   }
+
+  const downloadedOriginalSize = downloadableItems.reduce(
+    (sum, item) => sum + item.originalSize,
+    0,
+  )
+  const downloadedFinalSize = downloadableItems.reduce(
+    (sum, item) => sum + getEffectiveItemSize(item),
+    0,
+  )
+  const downloadedCompressionRatio =
+    downloadedOriginalSize === 0
+      ? 0
+      : ((downloadedOriginalSize - downloadedFinalSize) /
+          downloadedOriginalSize) *
+        100
 
   downloading.value = true
 
@@ -1951,7 +2379,7 @@ async function downloadAllImages() {
     // 将所有压缩图片添加到 ZIP 中
     for (const item of downloadableItems) {
       // Prefer replacedUrl (applied conversion) over compressedUrl
-      const sourceUrl = item.replacedUrl || item.compressedUrl
+      const sourceUrl = getEffectiveItemUrl(item)
       if (!sourceUrl) continue
 
       const response = await fetch(sourceUrl)
@@ -1987,9 +2415,9 @@ async function downloadAllImages() {
         h(
           'div',
           {
-            style: `color: ${totalCompressionRatio.value < 0 ? '#dc2626' : '#059669'}; font-size: 13px; font-family: monospace; background: ${totalCompressionRatio.value < 0 ? 'rgba(220, 38, 38, 0.1)' : 'rgba(5, 150, 105, 0.1)'}; padding: 2px 6px; border-radius: 4px;`,
+            style: `color: ${downloadedCompressionRatio < 0 ? '#dc2626' : '#059669'}; font-size: 13px; font-family: monospace; background: ${downloadedCompressionRatio < 0 ? 'rgba(220, 38, 38, 0.1)' : 'rgba(5, 150, 105, 0.1)'}; padding: 2px 6px; border-radius: 4px;`,
           },
-          `Total ${totalCompressionRatio.value < 0 ? 'increased' : 'saved'}: ${totalCompressionRatio.value < 0 ? '+' : ''}${Math.abs(totalCompressionRatio.value).toFixed(1)}%`,
+          `Downloaded set ${downloadedCompressionRatio < 0 ? 'increased' : 'saved'}: ${downloadedCompressionRatio < 0 ? '+' : ''}${Math.abs(downloadedCompressionRatio).toFixed(1)}%`,
         ),
       ]),
       type: 'success',
@@ -2406,9 +2834,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
           <el-icon class="upload-icon">
             <Picture />
           </el-icon>
-          <span class="upload-text"
-            >Drop, Paste or Click to Upload Images</span
-          >
+          <span class="upload-text">Drop, Paste or Click to Upload Images</span>
           <span class="upload-hint">
             Support PNG, JPG, JPEG, GIF, WebP, SVG formats • Multiple files &
             folders supported • Use Ctrl+V to paste images or raw SVG code
@@ -2441,6 +2867,15 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               <span class="btn-text">Add More</span>
             </button>
             <button
+              v-if="failedCount > 0"
+              class="action-btn retry-btn"
+              :title="`Retry ${failedCount} failed image(s)`"
+              @click="retryFailedImages"
+            >
+              <div class="btn-icon">↻</div>
+              <span class="btn-text">Retry Failed</span>
+            </button>
+            <button
               class="action-btn delete-btn"
               title="Clear All Images"
               @click="clearAllImages"
@@ -2461,7 +2896,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
           <div class="stats-info">
             <span class="size-label"
               >Total: {{ formatFileSize(totalOriginalSize) }} →
-              {{ formatFileSize(totalCompressedSize) }}</span
+              {{ formatFileSize(totalEffectiveSize) }}</span
             >
             <span
               class="saved-mini"
@@ -2469,6 +2904,17 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
             >
               {{ totalCompressionRatio < 0 ? '+' : '-'
               }}{{ Math.abs(totalCompressionRatio).toFixed(1) }}%
+            </span>
+          </div>
+          <div class="stats-pills">
+            <span v-if="activeCount > 0" class="stats-pill working-pill">
+              {{ activeCount }} working
+            </span>
+            <span v-if="failedCount > 0" class="stats-pill failed-pill">
+              {{ failedCount }} failed
+            </span>
+            <span v-if="downloadableCount > 0" class="stats-pill ready-pill">
+              {{ downloadableCount }} ready
             </span>
           </div>
         </div>
@@ -2536,16 +2982,124 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               @change="handleGlobalQualitySliderChange"
             />
           </div>
+
+          <div class="decision-control">
+            <div class="decision-toolbar-row">
+              <div class="decision-summary-inline">
+                <span class="decision-label-global">Output Strategy</span>
+                <span class="decision-summary-main">
+                  {{ formatOutputModeLabel(outputMode) }}
+                </span>
+                <span class="decision-summary-detail">
+                  {{
+                    objectiveEnabled
+                      ? `≤ ${objectiveTargetKb} KB · ${formatObjectiveGoalLabel(objectiveGoal)}`
+                      : 'No target size'
+                  }}
+                </span>
+              </div>
+
+              <el-popover
+                trigger="click"
+                placement="bottom-end"
+                :width="320"
+                popper-class="decision-popover-panel"
+              >
+                <template #reference>
+                  <button class="decision-trigger" type="button">
+                    {{ objectiveEnabled ? 'Edit' : 'Set' }}
+                  </button>
+                </template>
+
+                <div class="decision-popover-content">
+                  <div class="decision-popover-header">
+                    <span class="decision-popover-title">Output Strategy</span>
+                    <span class="decision-popover-subtitle">
+                      Set output format and optional target size.
+                    </span>
+                  </div>
+
+                  <div class="decision-field">
+                    <span class="decision-field-label">Output</span>
+                    <select
+                      v-model="outputMode"
+                      class="decision-select decision-select-full"
+                      @change="handleDecisionSettingsChange"
+                    >
+                      <option
+                        v-for="option in outputOptions"
+                        :key="option"
+                        :value="option"
+                      >
+                        {{ formatOutputModeLabel(option) }}
+                      </option>
+                    </select>
+                  </div>
+
+                  <label class="decision-toggle decision-toggle-row">
+                    <span class="decision-toggle-copy">
+                      <span class="decision-field-label">Target Size</span>
+                      <span class="decision-toggle-help">
+                        Search for the best result under a size budget
+                      </span>
+                    </span>
+                    <input
+                      v-model="objectiveEnabled"
+                      type="checkbox"
+                      @change="handleDecisionSettingsChange"
+                    />
+                  </label>
+
+                  <div v-if="objectiveEnabled" class="objective-row objective-row-stack">
+                    <div class="decision-field">
+                      <span class="decision-field-label">Target</span>
+                      <div class="objective-input-wrapper">
+                        <input
+                          v-model.number="objectiveTargetKb"
+                          type="number"
+                          min="1"
+                          step="10"
+                          class="decision-input"
+                          @change="handleDecisionSettingsChange"
+                        />
+                        <span class="objective-unit">KB</span>
+                      </div>
+                    </div>
+
+                    <div class="decision-field">
+                      <span class="decision-field-label">Goal</span>
+                      <select
+                        v-model="objectiveGoal"
+                        class="decision-select decision-select-full"
+                        @change="handleDecisionSettingsChange"
+                      >
+                        <option
+                          v-for="goal in objectiveGoalOptions"
+                          :key="goal"
+                          :value="goal"
+                        >
+                          {{ formatObjectiveGoalLabel(goal) }}
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </el-popover>
+            </div>
+          </div>
         </div>
 
-        <div v-if="allCompressed" class="toolbar-divider" />
+        <div v-if="downloadableCount > 0" class="toolbar-divider" />
 
-        <div v-if="allCompressed" class="toolbar-section download-section">
+        <div
+          v-if="downloadableCount > 0"
+          class="toolbar-section download-section"
+        >
           <button
             class="download-btn-new"
             :class="[{ downloading }]"
             :disabled="downloading"
-            title="Download All Compressed Images"
+            :title="downloadButtonLabel"
             @click="downloadAllImages"
           >
             <div class="download-btn-content">
@@ -2558,11 +3112,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 </el-icon>
               </div>
               <span class="download-text">
-                {{
-                  downloading
-                    ? 'Downloading...'
-                    : `Download All (${compressedCount})`
-                }}
+                {{ downloading ? 'Downloading...' : downloadButtonLabel }}
               </span>
             </div>
           </button>
@@ -2607,20 +3157,29 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               </div>
               <div
                 v-if="item.isCompressing || item.isUploading"
-                class="compressing-overlay"
+                :class="
+                  item.processingUiMode === 'subtle'
+                    ? 'processing-badge'
+                    : 'compressing-overlay'
+                "
               >
                 <el-icon class="is-loading">
                   <Loading />
                 </el-icon>
-                <button
-                  class="cancel-btn"
-                  @click.stop="cancelCompression(item)"
-                >
-                  Cancel
-                </button>
-                <div class="overlay-label" v-if="item.isUploading">
-                  Uploading...
-                </div>
+                <template v-if="item.processingUiMode === 'subtle'">
+                  <span class="processing-badge-label">Updating</span>
+                </template>
+                <template v-else>
+                  <button
+                    class="cancel-btn"
+                    @click.stop="cancelCompression(item)"
+                  >
+                    Cancel
+                  </button>
+                  <div class="overlay-label">
+                    {{ getItemTaskLabel(item) }}
+                  </div>
+                </template>
               </div>
               <div v-if="item.compressionError" class="error-overlay">
                 <span class="error-text">Error</span>
@@ -2690,22 +3249,28 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                     <div class="size-item">
                       <span class="size-label">Compressed</span>
                       <span class="size-value compressed">{{
-                        // If the user applied a converted replacement, show its size
-                        item.replacedSize
-                          ? formatFileSize(item.replacedSize)
-                          : formatFileSize(item.compressedSize || 0)
+                        formatFileSize(getEffectiveItemSize(item))
                       }}</span>
                     </div>
                   </div>
-                  <div class="compression-ratio">
+                  <div class="result-summary">
                     <span
                       class="ratio-badge"
                       :class="{
-                        'ratio-negative': (item.compressionRatio || 0) < 0,
+                        'ratio-negative':
+                          getEffectiveCompressionRatio(item) < 0,
                       }"
                     >
-                      {{ (item.compressionRatio || 0) < 0 ? '+' : '-'
-                      }}{{ Math.abs(item.compressionRatio || 0).toFixed(1) }}%
+                      {{ getEffectiveCompressionRatio(item) < 0 ? '+' : '-'
+                      }}{{
+                        Math.abs(getEffectiveCompressionRatio(item)).toFixed(1)
+                      }}%
+                    </span>
+                    <span
+                      v-if="hasDecisionFallback(item)"
+                      class="decision-chip fallback-chip"
+                    >
+                      Fallback
                     </span>
                   </div>
                 </div>
@@ -2754,7 +3319,15 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
             </div>
             <div class="image-actions">
               <button
-                v-if="item.compressedUrl && !item.compressionError"
+                v-if="item.compressionError"
+                class="action-btn-small retry-single"
+                title="Retry compression"
+                @click.stop="compressImage(item)"
+              >
+                ↻
+              </button>
+              <button
+                v-if="getEffectiveItemUrl(item) && !item.compressionError"
                 class="action-btn-small download-single"
                 title="Download this image"
                 @click.stop="downloadImage(item)"
@@ -2764,7 +3337,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 </el-icon>
               </button>
               <button
-                v-if="item.compressedUrl && !item.compressionError"
+                v-if="getEffectiveItemUrl(item) && !item.compressionError"
                 class="action-btn-small compare-single"
                 title="Compare tools on this image"
                 @click.stop="openComparePanel(item)"
@@ -2772,7 +3345,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 ⚖️
               </button>
               <button
-                v-if="item.compressedUrl && !item.compressionError"
+                v-if="getEffectiveItemUrl(item) && !item.compressionError"
                 class="action-btn-small crop-single"
                 title="Crop this image"
                 @click.stop="openCropPage(item)"
@@ -2780,7 +3353,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 ✂️
               </button>
               <button
-                v-if="item.compressedUrl && !item.compressionError"
+                v-if="getEffectiveItemUrl(item) && !item.compressionError"
                 class="action-btn-small convert-single"
                 title="Convert image format"
                 @click.stop="openFormatSelectDialog(item)"
@@ -2834,8 +3407,8 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               <p>
                 compressedSize:
                 {{
-                  currentImage.compressedSize
-                    ? formatFileSize(currentImage.compressedSize)
+                  getEffectiveItemUrl(currentImage)
+                    ? formatFileSize(getEffectiveItemSize(currentImage))
                     : '未压缩'
                 }}
               </p>
@@ -2848,7 +3421,9 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 
             <!-- 主要的图片对比组件 -->
             <img-comparison-slider
-              v-if="currentImage.originalUrl && currentImage.compressedUrl"
+              v-if="
+                currentImage.originalUrl && getEffectiveItemUrl(currentImage)
+              "
               class="comparison-slider-fullscreen"
               value="50"
             >
@@ -2869,7 +3444,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               />
               <img
                 slot="second"
-                :src="currentImage.compressedUrl"
+                :src="getEffectiveItemUrl(currentImage)"
                 alt="Compressed Image"
                 class="comparison-image-fullscreen"
                 :style="{
@@ -2903,7 +3478,9 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 <el-icon class="is-loading" size="30px">
                   <Loading />
                 </el-icon>
-                <div class="overlay-text">Compressing...</div>
+                <div class="overlay-text">
+                  {{ getItemTaskLabel(currentImage) }}
+                </div>
               </div>
               <div
                 v-if="currentImage.compressionError"
@@ -2980,20 +3557,52 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 <span
                   >{{ currentImageIndex + 1 }} / {{ imageItems.length }}</span
                 >
-                <span>Quality: {{ currentImage.quality }}%</span>
+                <span
+                  >Quality: {{ Math.round(currentImage.quality * 100) }}%</span
+                >
                 <span>{{ formatFileSize(currentImage.originalSize) }}</span>
-                <span v-if="currentImage.compressedSize">
-                  → {{ formatFileSize(currentImage.compressedSize) }}
+                <span v-if="getEffectiveItemUrl(currentImage)">
+                  → {{ formatFileSize(getEffectiveItemSize(currentImage)) }}
+                </span>
+                <span v-if="currentImage.bestTool">
+                  Tool: {{ currentImage.bestTool }}
+                </span>
+                <span v-if="currentImage.outputDecision">
+                  Output:
+                  {{
+                    formatDecisionOutput(currentImage.outputDecision.selected)
+                  }}
+                </span>
+                <span v-if="currentImage.objectiveDecision">
+                  Target: ≤
+                  {{
+                    formatFileSize(currentImage.objectiveDecision.targetBytes)
+                  }}
+                  ·
+                  {{
+                    formatObjectiveGoalLabel(
+                      currentImage.objectiveDecision.goal,
+                    )
+                  }}
+                </span>
+                <span v-if="currentImage.compressionDuration">
+                  {{ Math.round(currentImage.compressionDuration) }}ms
                 </span>
                 <span
-                  v-if="currentImage.compressionRatio"
+                  v-if="getEffectiveItemUrl(currentImage)"
                   class="savings"
                   :class="{
-                    'savings-negative': currentImage.compressionRatio < 0,
+                    'savings-negative':
+                      getEffectiveCompressionRatio(currentImage) < 0,
                   }"
                 >
-                  ({{ currentImage.compressionRatio < 0 ? '+' : '-'
-                  }}{{ Math.abs(currentImage.compressionRatio).toFixed(1) }}%)
+                  ({{
+                    getEffectiveCompressionRatio(currentImage) < 0 ? '+' : '-'
+                  }}{{
+                    Math.abs(
+                      getEffectiveCompressionRatio(currentImage),
+                    ).toFixed(1)
+                  }}%)
                 </span>
               </div>
             </div>
@@ -3197,7 +3806,9 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       :original-name="currentImage?.file.name"
       :compressed-name="currentImage?.file.name"
       :original-size="currentImage?.originalSize"
-      :compressed-size="currentImage?.compressedSize"
+      :compressed-size="
+        currentImage ? getEffectiveItemSize(currentImage) : undefined
+      "
       :parentScrollTop="cropPageParentScrollTop"
       @close="closeCropPage"
       @apply="applyCropPreprocess"
@@ -3228,6 +3839,112 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
         </div>
 
         <template v-else>
+          <div class="compare-summary">
+            <div class="summary-header">
+              <div class="summary-title">
+                <span class="file-icon">🧠</span>
+                <div class="summary-title-content">
+                  <div class="file-name">{{ compareTargetName }}</div>
+                  <div class="summary-subtitle">
+                    Decision inspector for the current output and target rules
+                  </div>
+                </div>
+              </div>
+              <div class="summary-best">
+                <span class="best-label">Winner</span>
+                <span class="best-tool">{{
+                  compareBestTool || 'original'
+                }}</span>
+              </div>
+            </div>
+
+            <div class="summary-metrics">
+              <span class="metric">
+                Requested · {{ formatOutputModeLabel(outputMode) }}
+              </span>
+              <span v-if="compareOutputDecision" class="metric">
+                Final ·
+                {{ formatDecisionOutput(compareOutputDecision.selected) }}
+              </span>
+              <span v-if="compareObjectiveDecision" class="metric">
+                Target · ≤
+                {{ formatFileSize(compareObjectiveDecision.targetBytes) }}
+              </span>
+              <span v-if="compareObjectiveDecision" class="metric">
+                Goal ·
+                {{ formatObjectiveGoalLabel(compareObjectiveDecision.goal) }}
+              </span>
+              <span v-if="compareObjectiveDecision" class="metric">
+                Quality ·
+                {{
+                  Math.round(compareObjectiveDecision.selectedQuality * 100)
+                }}%
+              </span>
+              <span class="metric time">
+                {{ Math.round(compareTotalDuration) }}ms
+              </span>
+            </div>
+
+            <div
+              v-if="
+                compareOutputDecision ||
+                compareObjectiveDecision ||
+                compareRejectedReasons.length
+              "
+              class="decision-summary compare-decision-summary"
+            >
+              <span
+                v-if="compareOutputDecision"
+                class="decision-chip output-chip"
+              >
+                Output ·
+                {{ formatDecisionOutput(compareOutputDecision.selected) }}
+              </span>
+              <span
+                v-if="compareObjectiveDecision"
+                class="decision-chip objective-chip"
+              >
+                {{ compareObjectiveDecision.candidatesEvaluated }} candidates
+              </span>
+              <span
+                v-if="
+                  compareOutputDecision?.usedFallback ||
+                  compareObjectiveDecision?.usedFallback
+                "
+                class="decision-chip fallback-chip"
+              >
+                Fallback
+              </span>
+            </div>
+
+            <div
+              v-if="compareFinalResult || compareRejectedReasons.length"
+              class="summary-footer"
+            >
+              <div v-if="compareRejectedReasons.length" class="summary-reasons">
+                <span class="summary-reasons-label">Rejected</span>
+                <span
+                  v-for="reason in compareRejectedReasons"
+                  :key="reason"
+                  class="reason-pill"
+                >
+                  {{ reason }}
+                </span>
+              </div>
+
+              <div class="summary-actions">
+                <button
+                  v-if="compareFinalResult"
+                  class="custom-btn use-btn"
+                  @click="applyCompareFinalDecision"
+                >
+                  <span class="btn-icon">✨</span>
+                  <span class="btn-text">Use final decision</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div class="compare-list">
             <div
               v-for="r in compareResults"
@@ -3922,6 +4639,26 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   color: #2563eb;
 }
 
+.retry-btn {
+  border-color: rgba(37, 99, 235, 0.2);
+}
+
+.retry-btn:hover {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  border-color: rgba(37, 99, 235, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+}
+
+.retry-btn:hover .btn-icon {
+  transform: scale(1.1);
+  color: #1d4ed8;
+}
+
+.retry-btn:hover .btn-text {
+  color: #1d4ed8;
+}
+
 .delete-btn {
   border-color: rgba(239, 68, 68, 0.2);
 }
@@ -4028,6 +4765,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   flex-direction: row;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .stats-info {
@@ -4074,10 +4812,48 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   box-shadow: 0 2px 4px rgba(220, 38, 38, 0.1);
 }
 
+.stats-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stats-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  border: 1px solid transparent;
+}
+
+.working-pill {
+  color: #4338ca;
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.18);
+}
+
+.failed-pill {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.18);
+}
+
+.ready-pill {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.18);
+}
+
 /* 选项区域 */
 .options-section {
   justify-content: center;
-  min-width: 120px;
+  align-items: flex-start;
+  min-width: 360px;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .exif-option {
@@ -4098,6 +4874,253 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   flex-direction: column;
   gap: 4px;
   margin-left: 20px;
+  min-width: 180px;
+}
+
+.decision-control {
+  display: flex;
+  min-width: 220px;
+}
+
+.decision-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.decision-summary-inline {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.decision-header-global {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.decision-label-global {
+  font-size: 11px;
+  color: #4b5563;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.decision-summary-main {
+  font-size: 14px;
+  color: #111827;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.decision-summary-detail {
+  min-width: 0;
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.decision-trigger {
+  border: 1px solid rgba(79, 70, 229, 0.18);
+  background: linear-gradient(135deg, #eef2ff 0%, #ede9fe 100%);
+  color: #4338ca;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.decision-trigger:hover {
+  transform: translateY(-1px);
+  border-color: rgba(79, 70, 229, 0.28);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.12);
+}
+
+.decision-mode-pill {
+  font-size: 10px;
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.1);
+  border: 1px solid rgba(124, 58, 237, 0.15);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-weight: 700;
+}
+
+.decision-row,
+.objective-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.decision-select,
+.decision-input {
+  appearance: none;
+  box-sizing: border-box;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  color: #1f2937;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.decision-select {
+  min-width: 108px;
+}
+
+.decision-select-compact {
+  min-width: 120px;
+}
+
+.decision-select:focus,
+.decision-input:focus {
+  outline: none;
+  border-color: rgba(79, 70, 229, 0.45);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.decision-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  user-select: none;
+}
+
+.decision-toggle input {
+  accent-color: #4f46e5;
+}
+
+.decision-toggle-row {
+  box-sizing: border-box;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.8);
+}
+
+.decision-toggle-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.decision-toggle-help {
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.decision-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.decision-field-label {
+  font-size: 11px;
+  color: #4b5563;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.objective-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.decision-input {
+  width: 100%;
+  padding-right: 34px;
+}
+
+.objective-unit {
+  position: absolute;
+  right: 10px;
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.decision-select-full {
+  width: 100%;
+}
+
+.objective-row-stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.decision-popover-content {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.decision-popover-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.decision-popover-title {
+  font-size: 14px;
+  color: #111827;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.decision-popover-subtitle {
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+:deep(.decision-popover-panel) {
+  max-width: calc(100vw - 24px);
+  padding: 0 !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18) !important;
 }
 
 .global-quality-header {
@@ -4361,6 +5384,18 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   gap: 12px;
 }
 
+.summary-title-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summary-subtitle {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
 .file-icon {
   font-size: 20px;
   opacity: 0.8;
@@ -4424,6 +5459,54 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 .summary-actions {
   display: flex;
   align-items: center;
+}
+
+.summary-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.compare-decision-summary {
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+.summary-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.summary-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex: 1;
+}
+
+.summary-reasons-label {
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.reason-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.16);
 }
 
 /* 加载状态 */
@@ -4853,11 +5936,13 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
 /* 小屏幕下隐藏操作按钮文字 - 仅PC端 */
 @media (max-width: 1180px) and (min-width: 769px) {
   .add-btn .btn-text,
+  .retry-btn .btn-text,
   .delete-btn .btn-text {
     display: none;
   }
 
   .add-btn,
+  .retry-btn,
   .delete-btn {
     min-width: 36px;
     justify-content: center;
@@ -5019,6 +6104,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
     margin-left: 0;
   }
 
+  .decision-control {
+    min-width: 220px;
+  }
+
   .image-quality-control {
     margin-top: 6px;
     padding-top: 6px;
@@ -5048,6 +6137,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   }
 
   .add-btn .btn-text,
+  .retry-btn .btn-text,
   .delete-btn .btn-text {
     display: inline !important;
   }
@@ -5059,6 +6149,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   }
 
   .add-btn,
+  .retry-btn,
   .delete-btn {
     padding: 8px 12px !important;
     min-width: auto !important;
@@ -5258,12 +6349,67 @@ img-comparison-slider img,
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(102, 126, 234, 0.8);
+  background: rgba(79, 70, 229, 0.62);
+  backdrop-filter: blur(6px);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   color: white;
-  font-size: 20px;
+  padding: 12px;
+  text-align: center;
+}
+
+.cancel-btn {
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.18);
+  color: white;
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.26);
+  border-color: rgba(255, 255, 255, 0.44);
+  transform: translateY(-1px);
+}
+
+.overlay-label {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+}
+
+.processing-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(8px);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.18);
+}
+
+.processing-badge-label {
+  white-space: nowrap;
 }
 
 /* 错误覆盖层 */
@@ -5408,7 +6554,7 @@ img-comparison-slider img,
 .compression-result {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .size-comparison {
@@ -5456,9 +6602,12 @@ img-comparison-slider img,
   flex-shrink: 0;
 }
 
-.compression-ratio {
+.result-summary {
   display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   justify-content: center;
+  align-items: center;
 }
 
 .ratio-badge {
@@ -5471,11 +6620,51 @@ img-comparison-slider img,
   border-radius: 12px;
   box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
   transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .ratio-badge.ratio-negative {
   background: linear-gradient(135deg, #ef4444, #dc2626);
   box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+}
+
+.decision-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.decision-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.1;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.output-chip {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.14);
+}
+
+.objective-chip {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.1);
+  border-color: rgba(124, 58, 237, 0.14);
+}
+
+.fallback-chip {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.18);
 }
 
 /* 图片质量控制 */
@@ -5704,6 +6893,16 @@ img-comparison-slider img,
 .download-single:hover {
   background: #ecfdf5;
   border-color: rgba(5, 150, 105, 0.4);
+}
+
+.retry-single {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.2);
+}
+
+.retry-single:hover {
+  background: #eff6ff;
+  border-color: rgba(37, 99, 235, 0.4);
 }
 
 .delete-single {
@@ -5976,6 +7175,497 @@ img-comparison-slider img,
   .image-title {
     margin-right: 0;
     text-align: center;
+  }
+
+  .decision-row,
+  .objective-row {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .decision-control {
+    width: 100%;
+    min-width: auto;
+  }
+}
+
+/* Playground 自适应修正 */
+.image-card,
+.image-info,
+.image-header,
+.image-stats,
+.compression-result,
+.size-comparison,
+.size-item,
+.image-actions {
+  min-width: 0;
+}
+
+.image-card,
+.image-info {
+  box-sizing: border-box;
+}
+
+.image-info {
+  height: auto;
+  min-height: 160px;
+}
+
+.image-header,
+.size-comparison {
+  flex-wrap: wrap;
+}
+
+.image-name {
+  min-width: 0;
+}
+
+.image-quality-control .quality-header {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.image-quality-control .quality-info {
+  min-width: 0;
+  flex: 1 1 110px;
+  flex-wrap: wrap;
+}
+
+.image-quality-control .reset-quality-btn {
+  margin-left: auto;
+}
+
+.image-quality-control .quality-label {
+  white-space: nowrap;
+}
+
+.image-quality-control .quality-value {
+  color: #374151;
+  white-space: nowrap;
+  background: none;
+  background-clip: border-box;
+  -webkit-background-clip: border-box;
+  -webkit-text-fill-color: currentColor;
+}
+
+.image-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(28px, 1fr));
+  gap: 4px;
+}
+
+.action-btn-small {
+  min-width: 0;
+  padding: 4px;
+}
+
+@media (max-width: 1180px) {
+  .floating-toolbar {
+    flex-wrap: wrap;
+    align-items: stretch;
+    justify-content: center;
+    width: min(100%, 1240px);
+    max-width: calc(100vw - 24px);
+    box-sizing: border-box;
+  }
+
+  .toolbar-section {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .toolbar-divider {
+    width: 100%;
+    height: 1px;
+    margin: 0;
+    background: linear-gradient(
+      to right,
+      transparent,
+      rgba(0, 0, 0, 0.1),
+      transparent
+    );
+  }
+
+  .files-section,
+  .stats-section,
+  .options-section {
+    flex: 1 1 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .files-info,
+  .action-buttons,
+  .stats-info {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .stats-info {
+    height: auto;
+  }
+
+  .stats-info .size-label {
+    min-width: 0;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .quality-control,
+  .decision-control {
+    min-width: 0;
+    margin-left: 0;
+    flex: 1 1 220px;
+  }
+
+  .decision-row,
+  .objective-row {
+    flex-wrap: wrap;
+  }
+
+  .objective-input-wrapper {
+    min-width: 0;
+  }
+
+  .decision-select,
+  .decision-select-compact {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 950px) {
+  .files-section,
+  .stats-section,
+  .options-section {
+    align-items: stretch;
+  }
+
+  .files-info {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .action-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    width: 100%;
+  }
+
+  .action-btn {
+    width: 100%;
+    justify-content: center !important;
+  }
+
+  .stats-info {
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .stats-info .size-label {
+    flex: 1 1 140px;
+    text-align: left;
+  }
+
+  .images-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+    padding: 8px;
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+
+  .image-card {
+    flex: initial;
+    width: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .floating-toolbar {
+    margin: 12px 8px;
+    max-width: calc(100vw - 16px);
+  }
+
+  .images-section {
+    padding: 8px;
+    gap: 12px;
+  }
+
+  .images-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 6px;
+  }
+
+  .files-info,
+  .stats-info {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .stats-info .size-label {
+    flex-basis: 100%;
+    text-align: center;
+  }
+
+  .action-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .image-info {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .image-actions {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .action-btn-small {
+    padding: 4px 2px;
+  }
+
+  .quality-control,
+  .decision-control,
+  .decision-select,
+  .decision-select-compact,
+  .decision-input {
+    width: 100%;
+  }
+}
+
+/* Toolbar stability */
+@media (min-width: 1351px) {
+  .floating-toolbar {
+    display: grid;
+    grid-template-columns:
+      minmax(280px, 1.1fr)
+      minmax(300px, 1fr)
+      minmax(460px, 1.35fr)
+      max-content;
+    align-items: center;
+    gap: 18px;
+    width: min(100%, 1980px);
+    max-width: calc(100vw - 48px);
+    padding: 14px 20px;
+    box-sizing: border-box;
+  }
+
+  .toolbar-divider {
+    display: none;
+  }
+
+  .toolbar-section {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .files-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .files-info {
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .action-buttons {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+
+  .stats-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 210px;
+    align-items: center;
+    gap: 14px;
+    min-height: 52px;
+  }
+
+  .stats-info {
+    min-width: 0;
+    height: auto;
+  }
+
+  .stats-info .size-label {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .stats-pills {
+    min-width: 210px;
+    min-height: 28px;
+    justify-content: flex-end;
+    align-items: center;
+    align-content: center;
+  }
+
+  .options-section {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) minmax(0, 0.95fr);
+    align-items: center;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  .exif-option {
+    min-width: 150px;
+    height: auto;
+  }
+
+  .exif-option :deep(.el-checkbox) {
+    margin-right: 0;
+    white-space: nowrap;
+  }
+
+  .quality-control {
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .decision-control {
+    min-width: 0;
+  }
+
+  .download-section {
+    justify-content: flex-end;
+  }
+
+  .download-btn-new {
+    width: 228px;
+    min-width: 228px;
+  }
+
+  .download-btn-content {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 1350px) and (min-width: 951px) {
+  .floating-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'files stats'
+      'options download';
+    align-items: stretch;
+    gap: 16px 18px;
+    width: min(100%, 1480px);
+    max-width: calc(100vw - 32px);
+    padding: 14px 18px;
+    box-sizing: border-box;
+  }
+
+  .toolbar-divider {
+    display: none;
+  }
+
+  .toolbar-section {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .files-section {
+    grid-area: files;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .files-info {
+    min-width: 0;
+  }
+
+  .action-buttons {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+
+  .stats-section {
+    grid-area: stats;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 190px;
+    align-items: center;
+    gap: 12px;
+    min-height: 52px;
+  }
+
+  .stats-info {
+    min-width: 0;
+    height: auto;
+  }
+
+  .stats-info .size-label {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .stats-pills {
+    min-width: 190px;
+    min-height: 28px;
+    justify-content: flex-end;
+    align-items: center;
+    align-content: center;
+  }
+
+  .options-section {
+    grid-area: options;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) minmax(0, 0.95fr);
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .exif-option {
+    min-width: 140px;
+    height: auto;
+  }
+
+  .exif-option :deep(.el-checkbox) {
+    margin-right: 0;
+    white-space: nowrap;
+  }
+
+  .quality-control {
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .decision-control {
+    min-width: 0;
+  }
+
+  .download-section {
+    grid-area: download;
+    justify-content: flex-end;
+    align-items: center;
+  }
+
+  .download-btn-new {
+    width: 228px;
+    min-width: 228px;
+  }
+
+  .download-btn-content {
+    width: 100%;
+    justify-content: center;
   }
 }
 

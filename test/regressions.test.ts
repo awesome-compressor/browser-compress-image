@@ -57,9 +57,8 @@ describe('resize regressions', () => {
 
 describe('adapter regressions', () => {
   it('fails jsquash explicitly outside browser runtimes', async () => {
-    const { default: compressWithJsquash } = await import(
-      '../src/tools/compressWithJsquash'
-    )
+    const { default: compressWithJsquash } =
+      await import('../src/tools/compressWithJsquash')
 
     const file = new File(['x'.repeat(1000)], 'test.jpg', {
       type: 'image/jpeg',
@@ -79,11 +78,9 @@ describe('adapter regressions', () => {
       .mockResolvedValue(new Blob(['x'], { type: 'image/jpeg' }))
 
     const toolRegistry = new ToolRegistry()
-    toolRegistry.registerTool(
-      'browser-image-compression',
-      imageCompression,
-      ['jpeg'],
-    )
+    toolRegistry.registerTool('browser-image-compression', imageCompression, [
+      'jpeg',
+    ])
 
     const file = new File(['x'.repeat(1000)], 'test.jpg', {
       type: 'image/jpeg',
@@ -120,9 +117,8 @@ describe('adapter regressions', () => {
       default: imageCompression,
     }))
 
-    const { default: compressWithBrowserImageCompression } = await import(
-      '../src/tools/compressWithBrowserImageCompression'
-    )
+    const { default: compressWithBrowserImageCompression } =
+      await import('../src/tools/compressWithBrowserImageCompression')
 
     const file = new File(['x'.repeat(1000)], 'test.jpg', {
       type: 'image/jpeg',
@@ -154,9 +150,8 @@ describe('adapter regressions', () => {
     }))
 
     const gifsicle = await import('gifsicle-wasm-browser')
-    const { default: compressWithGifsicle } = await import(
-      '../src/tools/compressWithGifsicle'
-    )
+    const { default: compressWithGifsicle } =
+      await import('../src/tools/compressWithGifsicle')
 
     const file = new File(['x'.repeat(1000)], 'test.gif', {
       type: 'image/gif',
@@ -187,9 +182,8 @@ describe('adapter regressions', () => {
     }))
 
     const gifsicle = await import('gifsicle-wasm-browser')
-    const { default: compressWithGifsicle } = await import(
-      '../src/tools/compressWithGifsicle'
-    )
+    const { default: compressWithGifsicle } =
+      await import('../src/tools/compressWithGifsicle')
 
     const file = new File(['x'.repeat(1000)], 'test.gif', {
       type: 'image/gif',

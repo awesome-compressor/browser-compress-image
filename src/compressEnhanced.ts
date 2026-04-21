@@ -306,19 +306,6 @@ export function compressJob<T extends CompressResultType = 'blob'>(
   }
 }
 
-/**
- * Direct compression without queue (for internal use and non-queued operations)
- */
-async function compressDirectly<T extends CompressResultType>(
-  file: File,
-  options: CompressOptions,
-  useWorker: boolean,
-  type: T,
-): Promise<CompressResult<T>> {
-  const compressedBlob = await compressBlob(file, options, useWorker)
-  return (await convertBlobToType(compressedBlob, type)) as CompressResult<T>
-}
-
 async function prepareCompressionFile(
   file: File,
   preprocess?: PreprocessOptions,

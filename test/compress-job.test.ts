@@ -165,7 +165,9 @@ describe('compressJob', () => {
   })
 
   it("[CORE-003][JOB-001] preserves the original basename on `type: 'file'` job results", async () => {
-    compressMock.mockResolvedValue(new Blob(['job-result'], { type: 'image/webp' }))
+    compressMock.mockResolvedValue(
+      new Blob(['job-result'], { type: 'image/webp' }),
+    )
 
     vi.spyOn(compressionQueue, 'compress').mockImplementation(
       (file, options, priority, execute) => {

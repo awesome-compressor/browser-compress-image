@@ -106,19 +106,16 @@ import { compressWithTools } from '@awesome-compressor/browser-compress-image'
 
 async function smartCompress(file: File) {
   if (file.type.includes('jpeg')) {
-    const { registerCompressorJS } = await import(
-      '@awesome-compressor/browser-compress-image'
-    )
+    const { registerCompressorJS } =
+      await import('@awesome-compressor/browser-compress-image')
     registerCompressorJS()
   } else if (file.type.includes('gif')) {
-    const { registerGifsicle } = await import(
-      '@awesome-compressor/browser-compress-image'
-    )
+    const { registerGifsicle } =
+      await import('@awesome-compressor/browser-compress-image')
     registerGifsicle()
   } else {
-    const { registerCanvas } = await import(
-      '@awesome-compressor/browser-compress-image'
-    )
+    const { registerCanvas } =
+      await import('@awesome-compressor/browser-compress-image')
     registerCanvas()
   }
 
