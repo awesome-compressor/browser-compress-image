@@ -4,7 +4,7 @@
 
 ## Package
 
-- npm version: `0.0.5`
+- npm version: `0.0.6`
 - package name: `@awesome-compressor/browser-compress-image`
 - module type: `module`
 
