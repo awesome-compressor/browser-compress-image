@@ -5,6 +5,8 @@ import {
   // @ts-ignore
   CloseBold,
   // @ts-ignore
+  CopyDocument,
+  // @ts-ignore
   Delete,
   // @ts-ignore
   Download,
@@ -153,6 +155,13 @@ interface CompressionStatsInfo {
 // 响应式状态
 const loading = ref(false)
 const downloading = ref(false)
+const showBase64Dialog = ref(false)
+const base64DialogLoading = ref(false)
+const base64DialogTitle = ref('')
+const base64DialogValue = ref('')
+const base64DialogFileName = ref('')
+const base64DialogMime = ref('')
+const base64DialogSize = ref(0)
 const fileRef = ref()
 const isDragOver = ref(false)
 const currentImageIndex = ref(0)
@@ -391,7 +400,7 @@ function applyCompareResult(r: ToolCompareItem) {
   const item = imageItems.value[idx]
 
   // 释放旧的压缩 URL
-  if (item.compressedUrl) {
+  if (item.compressedUrl && item.compressedUrl !== item.originalUrl) {
     URL.revokeObjectURL(item.compressedUrl)
   }
 
@@ -408,7 +417,11 @@ function applyCompareResult(r: ToolCompareItem) {
     objectiveDecision: undefined,
   })
 
-  ElMessage.success(`Applied result from ${r.tool}`)
+  currentImageIndex.value = idx
+  ElMessage.success(
+    `Applied ${r.tool} result: ${formatFileSize(r.compressedSize)}`,
+  )
+  closeComparePanel()
 }
 
 function applyCompareFinalDecision() {
@@ -418,7 +431,7 @@ function applyCompareFinalDecision() {
   }
 
   const item = imageItems.value[idx]
-  if (item.compressedUrl) {
+  if (item.compressedUrl && item.compressedUrl !== item.originalUrl) {
     URL.revokeObjectURL(item.compressedUrl)
   }
 
@@ -437,7 +450,11 @@ function applyCompareFinalDecision() {
     objectiveDecision: compareObjectiveDecision.value,
   })
 
-  ElMessage.success('Applied final decision result')
+  currentImageIndex.value = idx
+  ElMessage.success(
+    `Applied recommended result: ${formatFileSize(compareFinalResult.value.size)}`,
+  )
+  closeComparePanel()
 }
 
 // 压缩进度状态
@@ -994,6 +1011,41 @@ function getFileNameForMime(fileName: string, mime?: string) {
   const ext = mime.replace('image/', '').replace('+xml', '')
   const normalizedExt = ext === 'jpeg' ? 'jpg' : ext
   return `${nameWithoutExt}.${normalizedExt}`
+}
+
+function blobToBase64(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
+function getBase64TextFileName(fileName: string) {
+  return `${fileName.replace(/\.[^/.]+$/, '')}.base64.txt`
+}
+
+function formatBase64Mime(mime: string) {
+  return mime
+    ? mime.replace('image/', '').replace('+xml', '').toUpperCase()
+    : 'IMAGE'
+}
+
+function copyText(text: string) {
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  textArea.readOnly = true
+  textArea.style.position = 'fixed'
+  textArea.style.inset = '0 auto auto 0'
+  textArea.style.opacity = '0'
+  document.body.appendChild(textArea)
+  textArea.focus()
+  textArea.select()
+  textArea.setSelectionRange(0, textArea.value.length)
+  const copied = document.execCommand('copy')
+  document.body.removeChild(textArea)
+  return copied
 }
 
 async function createDisplayedFileForItem(item: ImageItem) {
@@ -2281,6 +2333,67 @@ async function downloadImage(item: ImageItem) {
   }
 }
 
+async function openBase64Dialog(item: ImageItem) {
+  const sourceUrl = getEffectiveItemUrl(item)
+  if (!sourceUrl) return
+
+  base64DialogTitle.value = item.file.name
+  base64DialogValue.value = ''
+  base64DialogFileName.value = getBase64TextFileName(item.file.name)
+  base64DialogMime.value = ''
+  base64DialogSize.value = 0
+  showBase64Dialog.value = true
+  base64DialogLoading.value = true
+
+  try {
+    const blob =
+      item.replacedBlob instanceof Blob
+        ? item.replacedBlob
+        : await fetch(sourceUrl).then((response) => response.blob())
+    const fileName = getFileNameForMime(
+      item.file.name,
+      blob.type || item.replacedMime || item.file.type,
+    )
+
+    base64DialogTitle.value = fileName
+    base64DialogFileName.value = getBase64TextFileName(fileName)
+    base64DialogMime.value = blob.type || item.replacedMime || item.file.type
+    base64DialogSize.value = blob.size
+    base64DialogValue.value = await blobToBase64(blob)
+  } catch (error) {
+    console.error('Base64 generation failed:', error)
+    ElMessage({
+      message: 'Failed to generate Base64 result',
+      type: 'error',
+    })
+  } finally {
+    base64DialogLoading.value = false
+  }
+}
+
+async function copyBase64Result() {
+  if (!base64DialogValue.value) return
+
+  try {
+    if (!copyText(base64DialogValue.value)) {
+      await navigator.clipboard.writeText(base64DialogValue.value)
+    }
+    ElMessage.success('Base64 copied')
+  } catch (error) {
+    console.error('Base64 copy failed:', error)
+    ElMessage.error('Failed to copy Base64')
+  }
+}
+
+function downloadBase64Result() {
+  if (!base64DialogValue.value) return
+
+  const blob = new Blob([base64DialogValue.value], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  download(url, base64DialogFileName.value)
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 // 接收来自 FormatConversion 组件的应用事件，将转换结果应用到对应的 image item
 function applyConversionToItem(payload: {
   id: string
@@ -3050,7 +3163,10 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                     />
                   </label>
 
-                  <div v-if="objectiveEnabled" class="objective-row objective-row-stack">
+                  <div
+                    v-if="objectiveEnabled"
+                    class="objective-row objective-row-stack"
+                  >
                     <div class="decision-field">
                       <span class="decision-field-label">Target</span>
                       <div class="objective-input-wrapper">
@@ -3338,6 +3454,16 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               </button>
               <button
                 v-if="getEffectiveItemUrl(item) && !item.compressionError"
+                class="action-btn-small base64-single"
+                title="Show Base64 result"
+                @click.stop="openBase64Dialog(item)"
+              >
+                <el-icon>
+                  <CopyDocument />
+                </el-icon>
+              </button>
+              <button
+                v-if="getEffectiveItemUrl(item) && !item.compressionError"
                 class="action-btn-small compare-single"
                 title="Compare tools on this image"
                 @click.stop="openComparePanel(item)"
@@ -3621,6 +3747,97 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
       @change="handleFileInputChange"
     />
 
+    <el-dialog
+      v-model="showBase64Dialog"
+      width="min(820px, 94vw)"
+      :show-close="false"
+      append-to-body
+      align-center
+      modal-class="base64-modal"
+    >
+      <div class="base64-panel">
+        <div class="base64-panel-header">
+          <div class="base64-heading">
+            <div class="base64-icon">
+              <el-icon>
+                <CopyDocument />
+              </el-icon>
+            </div>
+            <div class="base64-title-block">
+              <span class="base64-kicker">Base64 Result</span>
+              <h3 :title="base64DialogTitle">{{ base64DialogTitle }}</h3>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="base64-close-btn"
+            title="Close"
+            @click="showBase64Dialog = false"
+          >
+            <el-icon>
+              <CloseBold />
+            </el-icon>
+          </button>
+        </div>
+
+        <div class="base64-meta-row">
+          <span class="base64-meta-pill">{{
+            formatBase64Mime(base64DialogMime)
+          }}</span>
+          <span v-if="base64DialogSize" class="base64-meta-pill">
+            {{ formatFileSize(base64DialogSize) }}
+          </span>
+          <span v-if="base64DialogValue" class="base64-meta-pill">
+            {{ base64DialogValue.length.toLocaleString() }} chars
+          </span>
+        </div>
+
+        <div class="base64-output-shell">
+          <div class="base64-output-toolbar">
+            <span>Data URL</span>
+          </div>
+          <div v-if="base64DialogLoading" class="base64-loading">
+            <el-icon class="is-loading">
+              <Loading />
+            </el-icon>
+          </div>
+          <el-input
+            v-else
+            v-model="base64DialogValue"
+            class="base64-output-input"
+            type="textarea"
+            readonly
+            :rows="12"
+          />
+        </div>
+
+        <div class="base64-dialog-actions">
+          <button
+            type="button"
+            class="base64-action-btn base64-action-secondary"
+            :disabled="base64DialogLoading || !base64DialogValue"
+            @click="downloadBase64Result"
+          >
+            <el-icon>
+              <Download />
+            </el-icon>
+            <span>Download .txt</span>
+          </button>
+          <button
+            type="button"
+            class="base64-action-btn base64-action-primary"
+            :disabled="base64DialogLoading || !base64DialogValue"
+            @click="copyBase64Result"
+          >
+            <el-icon>
+              <CopyDocument />
+            </el-icon>
+            <span>Copy</span>
+          </button>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- 设置面板 -->
     <el-dialog
       v-model="showSettingsPanel"
@@ -3846,7 +4063,7 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
                 <div class="summary-title-content">
                   <div class="file-name">{{ compareTargetName }}</div>
                   <div class="summary-subtitle">
-                    Decision inspector for the current output and target rules
+                    Recommended result after output and target rules
                   </div>
                 </div>
               </div>
@@ -3935,11 +4152,13 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               <div class="summary-actions">
                 <button
                   v-if="compareFinalResult"
+                  type="button"
                   class="custom-btn use-btn"
+                  title="Apply the recommended winner after output and target rules"
                   @click="applyCompareFinalDecision"
                 >
                   <span class="btn-icon">✨</span>
-                  <span class="btn-text">Use final decision</span>
+                  <span class="btn-text">Use recommended result</span>
                 </button>
               </div>
             </div>
@@ -4002,11 +4221,13 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
               <div class="compare-actions">
                 <button
                   v-if="r.success && r.url"
+                  type="button"
                   class="custom-btn use-btn"
+                  title="Apply this tool output to the image card"
                   @click="applyCompareResult(r)"
                 >
                   <span class="btn-icon">👆</span>
-                  <span class="btn-text">Use this result</span>
+                  <span class="btn-text">Use tool result</span>
                 </button>
               </div>
             </div>
@@ -5859,6 +6080,275 @@ function getDeviceBasedTimeout(baseTimeout: number): number {
   transform: translateY(0);
 }
 
+:global(.base64-modal .el-dialog) {
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 20px;
+  background: transparent;
+  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.28);
+}
+
+:global(.base64-modal .el-dialog__header) {
+  display: none;
+}
+
+:global(.base64-modal .el-dialog__body) {
+  padding: 0;
+}
+
+.base64-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), #ffffff 52%),
+    radial-gradient(circle at top left, rgba(102, 126, 234, 0.18), transparent);
+  border: 0;
+}
+
+.base64-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  color: white;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.base64-heading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 14px;
+}
+
+.base64-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: white;
+  font-size: 22px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 10px 24px rgba(30, 41, 59, 0.18);
+}
+
+.base64-title-block {
+  min-width: 0;
+}
+
+.base64-kicker {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.78;
+}
+
+.base64-title-block h3 {
+  margin: 0;
+  max-width: 600px;
+  overflow: hidden;
+  color: white;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.base64-close-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.base64-close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.base64-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 18px 24px 0;
+}
+
+.base64-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border: 1px solid rgba(102, 126, 234, 0.18);
+  border-radius: 999px;
+  padding: 4px 12px;
+  color: #4338ca;
+  background: rgba(102, 126, 234, 0.08);
+  font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.base64-output-shell {
+  margin: 16px 24px 20px;
+  overflow: hidden;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 16px 44px rgba(102, 126, 234, 0.1);
+}
+
+.base64-output-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 0 16px;
+  color: #4b5563;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.9),
+    rgba(241, 245, 249, 0.88)
+  );
+  border-bottom: 1px solid rgba(102, 126, 234, 0.14);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.base64-loading {
+  min-height: 330px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #667eea;
+  font-size: 26px;
+}
+
+.base64-output-input :deep(.el-textarea__inner) {
+  height: min(44vh, 360px);
+  min-height: 280px;
+  border: 0;
+  border-radius: 0;
+  padding: 16px 18px;
+  color: #334155;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: none;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.base64-output-input :deep(.el-textarea__inner:focus) {
+  box-shadow: inset 0 0 0 1px rgba(102, 126, 234, 0.22);
+}
+
+.base64-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 24px 24px;
+}
+
+.base64-action-btn {
+  min-height: 42px;
+  border-radius: 12px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.base64-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.base64-action-primary {
+  border: 0;
+  color: white;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  box-shadow: 0 10px 28px rgba(102, 126, 234, 0.28);
+}
+
+.base64-action-primary:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px rgba(102, 126, 234, 0.36);
+}
+
+.base64-action-secondary {
+  color: #4f46e5;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(102, 126, 234, 0.22);
+}
+
+.base64-action-secondary:not(:disabled):hover {
+  background: #eef2ff;
+  transform: translateY(-1px);
+}
+
+@media (max-width: 640px) {
+  .base64-panel-header {
+    padding: 18px;
+  }
+
+  .base64-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    font-size: 19px;
+  }
+
+  .base64-title-block h3 {
+    font-size: 18px;
+  }
+
+  .base64-meta-row {
+    padding: 14px 18px 0;
+  }
+
+  .base64-output-shell {
+    margin: 14px 18px 18px;
+  }
+
+  .base64-dialog-actions {
+    padding: 0 18px 18px;
+    flex-direction: column;
+  }
+
+  .base64-action-btn {
+    width: 100%;
+  }
+}
+
 /* 全屏图片对比区域 */
 .fullscreen-comparison {
   flex: 1;
@@ -6895,6 +7385,16 @@ img-comparison-slider img,
   border-color: rgba(5, 150, 105, 0.4);
 }
 
+.base64-single {
+  color: #7c3aed;
+  border-color: rgba(124, 58, 237, 0.2);
+}
+
+.base64-single:hover {
+  background: #f5f3ff;
+  border-color: rgba(124, 58, 237, 0.4);
+}
+
 .retry-single {
   color: #2563eb;
   border-color: rgba(37, 99, 235, 0.2);
@@ -7423,7 +7923,7 @@ img-comparison-slider img,
   }
 
   .image-actions {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
   .action-btn-small {
